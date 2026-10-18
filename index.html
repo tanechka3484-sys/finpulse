@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FinPulse — рынок, облигации, дивиденды</title>
+  <meta name="description" content="FinPulse — финансовая аналитика и мониторинг рынка: акции, облигации, дивиденды, новости и интерактивные графики." />
+  <meta name="theme-color" content="#0f172a" />
+
+  <!-- Шрифт -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind (Play CDN) + конфиг с цветами на CSS-переменных (для тёмной/светлой темы) -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    const v = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            bg: v('bg'), surface: v('surface'), elevated: v('elevated'), line: v('line'),
+            fg: v('fg'), muted: v('muted'), up: v('up'), down: v('down'),
+            accent: v('accent'), warn: v('warn'),
+          },
+        },
+      },
+    };
+  </script>
+
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- Применяем сохранённую тему до отрисовки, чтобы не было «мигания» -->
+  <script>
+    try { if (localStorage.getItem('fp:theme') === '"light"') document.documentElement.classList.replace('dark', 'light'); } catch (e) {}
+  </script>
+</head>
+
+<body class="bg-bg text-fg font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="sticky top-0 z-40 bg-bg/90 backdrop-blur border-b border-line">
+    <div class="relative z-20 max-w-[1440px] mx-auto px-4 h-14 flex items-center gap-3">
+      <!-- Логотип -->
+      <a href="#stocks" class="flex items-center gap-2 shrink-0" aria-label="FinPulse — на главную">
+        <span class="w-8 h-8 rounded-lg bg-accent grid place-items-center text-white shadow-lg shadow-accent/30">
+          <i data-lucide="activity" class="w-5 h-5"></i>
+        </span>
+        <span class="hidden sm:inline text-lg font-bold tracking-tight">Fin<span class="text-accent">Pulse</span></span>
+      </a>
+
+      <!-- Поиск с автодополнением -->
+      <div id="search" class="relative flex-1 max-w-xl">
+        <i data-lucide="search" class="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Тикер, компания или ISIN…"
+               class="w-full h-9 pl-9 pr-10 rounded-lg bg-surface border border-line text-sm placeholder:text-muted focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 transition"
+               role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" />
+        <kbd class="hidden md:block absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted border border-line rounded px-1.5 py-0.5 font-mono">/</kbd>
+        <div id="search-results" role="listbox"
+             class="hidden absolute left-0 right-0 top-11 bg-surface border border-line rounded-xl shadow-2xl shadow-black/40 overflow-hidden max-h-[70vh] overflow-y-auto"></div>
+      </div>
+
+      <!-- Статус биржи -->
+      <div id="market-status" class="hidden lg:flex items-center gap-2 text-xs text-muted shrink-0">
+        <span class="status-dot"></span><span class="status-text">—</span>
+        <span class="font-mono status-clock"></span>
+      </div>
+
+      <!-- Тема -->
+      <button id="theme-toggle" class="icon-btn shrink-0" title="Сменить тему" aria-label="Сменить тему">
+        <i data-lucide="moon" class="w-4 h-4 icon-moon"></i>
+        <i data-lucide="sun" class="w-4 h-4 icon-sun"></i>
+      </button>
+    </div>
+
+    <!-- Главное меню -->
+    <nav class="max-w-[1440px] mx-auto px-4">
+      <ul id="main-nav" class="flex gap-1 overflow-x-auto no-scrollbar -mb-px">
+        <li><a href="#stocks" data-nav="stocks" class="nav-link"><i data-lucide="chart-candlestick" class="w-4 h-4"></i>Акции</a></li>
+        <li><a href="#bonds" data-nav="bonds" class="nav-link"><i data-lucide="landmark" class="w-4 h-4"></i>Облигации</a></li>
+        <li><a href="#dividends" data-nav="dividends" class="nav-link"><i data-lucide="calendar-days" class="w-4 h-4"></i>Дивиденды</a></li>
+        <li><a href="#news" data-nav="news" class="nav-link"><i data-lucide="newspaper" class="w-4 h-4"></i>Новости</a></li>
+        <li><a href="#portfolio" data-nav="portfolio" class="nav-link"><i data-lucide="star" class="w-4 h-4"></i>Портфель<span id="fav-count" class="nav-badge">0</span></a></li>
+      </ul>
+    </nav>
+
+    <!-- Бегущая строка -->
+    <div class="border-t border-line bg-surface/60 overflow-hidden ticker-mask">
+      <div id="ticker-tape" class="ticker-track flex w-max py-1.5 text-xs">
+        <!-- скелетон до загрузки -->
+        <div class="flex gap-8 px-4">
+          <span class="skeleton h-3.5 w-28"></span><span class="skeleton h-3.5 w-28"></span><span class="skeleton h-3.5 w-28"></span>
+          <span class="skeleton h-3.5 w-28"></span><span class="skeleton h-3.5 w-28"></span><span class="skeleton h-3.5 w-28"></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="flex-1 w-full max-w-[1440px] mx-auto px-4 py-5">
+
+    <!-- ========== АКЦИИ ========== -->
+    <section data-view="stocks" class="view space-y-5">
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+
+        <!-- Карточка графика -->
+        <article class="card !p-0 overflow-hidden" id="chart-card">
+          <!-- Заголовок инструмента -->
+          <div class="p-4 pb-3 flex flex-wrap items-start justify-between gap-3">
+            <div id="chart-head" class="min-w-0">
+              <div class="flex items-center gap-2"><span class="skeleton h-6 w-40"></span></div>
+              <div class="mt-2"><span class="skeleton h-9 w-56 block"></span></div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="seg" id="interval-switch" role="tablist" aria-label="Интервал">
+                <button data-interval="1D">1D</button><button data-interval="1W">1W</button><button data-interval="1M">1M</button><button data-interval="1Y">1Y</button><button data-interval="ALL">ALL</button>
+              </div>
+              <div class="seg" id="type-switch" role="tablist" aria-label="Тип графика">
+                <button data-type="candles" title="Свечи"><i data-lucide="chart-candlestick" class="w-4 h-4"></i></button>
+                <button data-type="line" title="Линия"><i data-lucide="chart-spline" class="w-4 h-4"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- График -->
+          <div class="relative h-[340px] sm:h-[420px] border-y border-line">
+            <div id="chart" class="absolute inset-0"></div>
+            <div id="chart-legend" class="absolute left-3 right-20 top-2 z-10 text-[11px] font-mono text-muted pointer-events-none"></div>
+            <div id="chart-skeleton" class="absolute inset-0 z-20 bg-surface grid place-items-center">
+              <div class="w-full h-full p-6 flex items-end gap-1.5">
+                <!-- заполняется из JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Ключевые метрики -->
+          <div id="chart-metrics" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-line"></div>
+        </article>
+
+        <!-- Правая колонка: обзор рынка + новости по тикеру -->
+        <aside class="space-y-5">
+          <div class="card">
+            <h3 class="card-title"><i data-lucide="gauge" class="w-4 h-4 text-accent"></i>Обзор рынка</h3>
+            <div id="market-overview" class="mt-3 space-y-3">
+              <span class="skeleton h-4 w-full block"></span><span class="skeleton h-4 w-4/5 block"></span><span class="skeleton h-4 w-3/5 block"></span>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="card-title"><i data-lucide="newspaper" class="w-4 h-4 text-accent"></i>Новости по <span id="related-ticker" class="text-accent">—</span></h3>
+            <div id="related-news" class="mt-3 space-y-3"></div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Лидеры -->
+      <div class="grid gap-5 md:grid-cols-3">
+        <div class="card"><h3 class="card-title"><i data-lucide="trending-up" class="w-4 h-4 text-up"></i>Лидеры роста</h3><div id="leaders-gainers" class="mt-2"></div></div>
+        <div class="card"><h3 class="card-title"><i data-lucide="trending-down" class="w-4 h-4 text-down"></i>Лидеры падения</h3><div id="leaders-losers" class="mt-2"></div></div>
+        <div class="card"><h3 class="card-title"><i data-lucide="flame" class="w-4 h-4 text-warn"></i>Самые торгуемые</h3><div id="leaders-active" class="mt-2"></div></div>
+      </div>
+
+      <!-- Таблица акций -->
+      <div class="card !p-0">
+        <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-semibold">Все акции <span id="stocks-count" class="text-muted font-normal"></span></h2>
+          <div id="sector-filter" class="flex flex-wrap gap-1.5"></div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="stocks-table">
+            <thead>
+              <tr>
+                <th class="w-8"></th>
+                <th data-sort="ticker" class="text-left">Инструмент</th>
+                <th data-sort="sector" class="text-left hidden md:table-cell">Сектор</th>
+                <th data-sort="price">Цена, ₽</th>
+                <th data-sort="changePct">Изм.</th>
+                <th data-sort="turnover" class="hidden sm:table-cell">Оборот</th>
+                <th data-sort="marketCap" class="hidden lg:table-cell">Капитализация</th>
+                <th data-sort="pe" class="hidden lg:table-cell">P/E</th>
+                <th data-sort="divYield" class="hidden md:table-cell">Див. дох.</th>
+                <th class="hidden sm:table-cell">30 дн.</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== ОБЛИГАЦИИ ========== -->
+    <section data-view="bonds" class="view space-y-5" hidden>
+      <div id="bond-summary" class="grid gap-4 grid-cols-2 lg:grid-cols-4"></div>
+
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="card !p-0 min-w-0">
+          <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-base font-semibold">Облигации <span id="bonds-count" class="text-muted font-normal"></span></h2>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="relative">
+                <i data-lucide="filter" class="w-3.5 h-3.5 text-muted absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+                <input id="bond-query" type="search" placeholder="Название или ISIN" class="input input-icon w-44" />
+              </div>
+              <div class="seg" id="bond-type">
+                <button data-bondtype="all">Все</button><button data-bondtype="ofz">ОФЗ</button><button data-bondtype="corp">Корп.</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="bonds-table">
+              <thead>
+                <tr>
+                  <th data-sort="name" class="text-left">Выпуск</th>
+                  <th data-sort="price">Цена, %</th>
+                  <th data-sort="ytm">YTM</th>
+                  <th data-sort="coupon">Купон</th>
+                  <th data-sort="couponPeriod" class="hidden sm:table-cell">Период</th>
+                  <th data-sort="duration" class="hidden md:table-cell">Дюрация</th>
+                  <th data-sort="maturity" class="hidden md:table-cell">Погашение</th>
+                  <th data-sort="ratingScore">Рейтинг</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title"><i data-lucide="spline" class="w-4 h-4 text-accent"></i>Кривая доходности</h3>
+          <p class="text-xs text-muted mt-1">YTM выпусков относительно срока до погашения</p>
+          <div id="yield-curve" class="mt-3"></div>
+          <div class="mt-3 flex items-center gap-4 text-xs text-muted">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-accent"></span>ОФЗ</span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-warn"></span>Корпоративные</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== ДИВИДЕНДЫ ========== -->
+    <section data-view="dividends" class="view space-y-5" hidden>
+      <div id="div-summary" class="grid gap-4 grid-cols-2 lg:grid-cols-4"></div>
+      <div class="card !p-0">
+        <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-semibold">Дивидендный календарь</h2>
+          <div class="flex flex-wrap gap-2">
+            <div class="seg" id="div-mode">
+              <button data-divmode="upcoming">Предстоящие</button><button data-divmode="past">Прошедшие</button><button data-divmode="all">Все</button>
+            </div>
+            <div class="seg" id="div-status">
+              <button data-divstatus="all">Любой статус</button><button data-divstatus="approved">Одобрено</button><button data-divstatus="recommended">Рекомендовано</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="div-table">
+            <thead>
+              <tr>
+                <th class="text-left">Компания</th>
+                <th class="text-left hidden md:table-cell">Период</th>
+                <th>Купить до</th>
+                <th>Дата отсечки</th>
+                <th>Дивиденд</th>
+                <th>Доходность</th>
+                <th class="hidden sm:table-cell">Статус</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== НОВОСТИ ========== -->
+    <section data-view="news" class="view space-y-5" hidden>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-lg font-semibold">Новости и аналитика</h2>
+        <div class="flex flex-wrap gap-2">
+          <div class="seg" id="news-tag">
+            <button data-newstag="all">Все</button><button data-newstag="stocks">Акции</button><button data-newstag="bonds">Облигации</button><button data-newstag="macro">Макро</button>
+          </div>
+          <div class="seg" id="news-impact">
+            <button data-impact="all">Любое влияние</button>
+            <button data-impact="positive" title="Позитивное"><span class="text-up">▲</span></button>
+            <button data-impact="neutral" title="Нейтральное"><span class="text-muted">●</span></button>
+            <button data-impact="negative" title="Негативное"><span class="text-down">▼</span></button>
+          </div>
+        </div>
+      </div>
+      <div id="news-grid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+    </section>
+
+    <!-- ========== ПОРТФЕЛЬ / ИЗБРАННОЕ ========== -->
+    <section data-view="portfolio" class="view space-y-5" hidden>
+      <div id="pf-summary" class="grid gap-4 grid-cols-2 lg:grid-cols-4"></div>
+      <div id="pf-allocation" class="card hidden"></div>
+      <div class="card !p-0">
+        <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-semibold">Избранное и позиции</h2>
+          <p class="text-xs text-muted">Укажите количество и среднюю цену — P&amp;L пересчитывается в реальном времени. Данные хранятся в браузере.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="pf-table">
+            <thead>
+              <tr>
+                <th class="w-8"></th>
+                <th class="text-left">Инструмент</th>
+                <th>Цена, ₽</th>
+                <th>Изм.</th>
+                <th>Кол-во</th>
+                <th>Ср. цена</th>
+                <th class="hidden sm:table-cell">Стоимость</th>
+                <th>P&amp;L</th>
+                <th class="w-8"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="border-t border-line text-xs text-muted">
+    <div class="max-w-[1440px] mx-auto px-4 py-5 flex flex-wrap justify-between gap-3">
+      <p>© FinPulse · Демонстрационные данные, сгенерированные локально. Не является индивидуальной инвестиционной рекомендацией.</p>
+      <p>Котировки обновляются в режиме симуляции · Графики: TradingView Lightweight Charts</p>
+    </div>
+  </footer>
+
+  <!-- Модальное окно (детали облигации) -->
+  <div id="modal" class="fixed inset-0 z-50 hidden" aria-modal="true" role="dialog">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" data-close></div>
+    <div class="relative mx-auto mt-[10vh] w-[calc(100%-2rem)] max-w-lg card shadow-2xl modal-panel" id="modal-body"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+  <!-- Библиотеки -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+
+  <!-- Приложение (обычные скрипты — работает даже при открытии через file://) -->
+  <script src="js/utils.js"></script>
+  <script src="js/mock-data.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
