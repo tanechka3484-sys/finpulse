@@ -98,10 +98,10 @@ FP.LiveSource = (() => {
   }
 
   /** Свечи ISS с постраничной догрузкой (по 500 строк). */
-  async function candles(secid, interval, from) {
+  async function candles(secid, interval, from, base = 'engines/stock/markets/shares/boards/TQBR') {
     const out = [];
     for (let start = 0; start < 5000;) {
-      const j = await iss(`engines/stock/markets/shares/boards/TQBR/securities/${secid}/candles`, { interval, from, start });
+      const j = await iss(`${base}/securities/${secid}/candles`, { interval, from, start });
       const rows = table(j.candles);
       out.push(...rows);
       if (rows.length < 500) break;
@@ -388,6 +388,9 @@ FP.LiveSource = (() => {
       return { low: Math.min(...bars.map((b) => b.low)), high: Math.max(...bars.map((b) => b.high)) };
     },
     sparkline: (t, n = 30) => hist.get(t).daily.slice(-n).map((b) => b.close),
+
+    /** Дневные свечи индекса (IMOEX, RTSI) примерно за 13 месяцев. */
+    getIndexHistory: (symbol) => candles(symbol, 24, daysAgo(400), 'engines/stock/markets/index'),
 
     subscribe(fn) {
       listeners.add(fn);

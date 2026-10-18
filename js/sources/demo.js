@@ -239,6 +239,20 @@ FP.DemoSource = (() => {
     },
     sparkline: (ticker, n = 30) => history(ticker).daily.slice(-n).map((b) => b.close),
 
+    /** Дневные бары индекса (~13 мес.), заканчивающиеся текущим значением. */
+    async getIndexHistory(symbol) {
+      await wait();
+      const idx = indices.find((i) => i.symbol === symbol);
+      const rng = U.rng(U.hash('idx:' + symbol)), days = businessDays(275);
+      const closes = new Array(days.length);
+      closes[days.length - 1] = idx.value;
+      for (let i = days.length - 2; i >= 0; i--) closes[i] = closes[i + 1] / Math.exp(0.0004 + 0.011 * U.gauss(rng));
+      return days.map((d, i) => {
+        const c = closes[i], o = i ? closes[i - 1] : c;
+        return { time: utc(d), open: o, close: c, high: Math.max(o, c) * 1.004, low: Math.min(o, c) * 0.996, volume: 0 };
+      });
+    },
+
     /** Подписка на «реалтайм». Возвращает функцию отписки. */
     subscribe(fn) {
       listeners.add(fn);

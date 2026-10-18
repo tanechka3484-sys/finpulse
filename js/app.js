@@ -7,7 +7,7 @@
   const U = FP.U, API = FP.API;
   const { $, $$ } = U;
 
-  const VIEWS = ['stocks', 'bonds', 'dividends', 'news', 'portfolio'];
+  const VIEWS = ['stocks', 'bonds', 'dividends', 'news', 'cycles', 'portfolio'];
   const SECTORS = ['all', 'Финансы', 'Энергетика', 'IT', 'Ритейл'];
   const COUPON_FREQ = { 30: 'ежемес.', 91: 'ежекв.', 182: 'полугод.', 365: 'ежегод.' };
   const NEWS_TAGS = { stocks: 'Акции', bonds: 'Облигации', macro: 'Макро' };
@@ -698,6 +698,11 @@
     $('.status-clock', el).textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} МСК`;
   }
 
+  /** Вкладка «Циклы» (js/cycles.js) — рисуется, когда есть котировки; облигации добавляются по мере загрузки. */
+  function renderCycles() {
+    if (state.stocks.length) FP.Cycles.render({ stocks: state.stocks, bonds: state.bonds, API });
+  }
+
   /* =====================================================================
      Индикатор источника данных
      ===================================================================== */
@@ -727,6 +732,7 @@
     $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === view));
     if (view === 'portfolio' && state.stocks.length) renderPortfolio();
     if (view === 'news' && state.news.length) renderNews(); // освежить «N мин назад»
+    if (view === 'cycles') renderCycles();
   }
 
   function route() {
@@ -929,11 +935,13 @@
     const pBonds = API.getBonds().then((d) => {
       if (!d.length) throw new Error('пустой список облигаций');
       state.bonds = d; renderBondSummary(); renderBonds(); renderYieldCurve();
+      if (state.view === 'cycles') renderCycles();
     }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
     const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));
 
     await Promise.all([pIndices, pStocks.catch(failed('#stocks-table tbody', 'котировки акций'))]);
     renderOverview();
+    if (state.view === 'cycles') renderCycles();
     API.subscribe(onTick);
     await Promise.all([pNews, pBonds, pDivs]);
   }

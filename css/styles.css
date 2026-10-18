@@ -249,3 +249,8 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 /* Нативный «крестик» у input[type=search] мешает подсказке «/» */
 #search-input::-webkit-search-cancel-button { display: none; }
 .seg[hidden] { display: none; }
+
+/* Пульсация маркера на «инвестиционных часах» */
+.cycle-pulse { transform-box: fill-box; transform-origin: center; animation: cyclePulse 2.2s ease-in-out infinite; }
+@keyframes cyclePulse { 0%, 100% { transform: scale(.8); opacity: .9; } 50% { transform: scale(1.35); opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .cycle-pulse { animation: none; } }
