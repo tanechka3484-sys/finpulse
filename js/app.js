@@ -11,6 +11,12 @@
   const SECTORS = ['all', 'Финансы', 'Энергетика', 'IT', 'Ритейл'];
   const COUPON_FREQ = { 30: 'ежемес.', 91: 'ежекв.', 182: 'полугод.', 365: 'ежегод.' };
   const NEWS_TAGS = { stocks: 'Акции', bonds: 'Облигации', macro: 'Макро' };
+  const DIV_STATUS = {
+    approved: '<span class="tag tag-up">✓ Одобрено</span>',
+    recommended: '<span class="tag tag-warn">◷ Рекомендовано</span>',
+    declared: '<span class="tag tag-accent">◷ Объявлено</span>',
+    paid: '<span class="tag tag-muted">✓ Выплачено</span>',
+  };
   const IMPACT = {
     positive: { label: 'Позитивно', cls: 'tag-up', icon: '▲' },
     negative: { label: 'Негативно', cls: 'tag-down', icon: '▼' },
@@ -108,6 +114,7 @@
   function updateTape(changed) {
     for (const { symbol, dir } of changed) {
       const i = state.indices.find((x) => x.symbol === symbol);
+      if (!i) continue;
       $$(`[data-idx="${CSS.escape(symbol)}"]`).forEach((el) => {
         const v = $('[data-f="value"]', el), c = $('[data-f="chg"]', el);
         v.textContent = U.price(i.value); U.flash(v, dir);
@@ -174,7 +181,7 @@
       <div class="mt-1 font-semibold num">${value}</div><div class="mt-1 text-xs text-muted num">${sub}</div></div>`;
     $('#chart-metrics').innerHTML = [
       cell('Объём', `<span data-q="${s.ticker}" data-f="volume">${U.compact(s.volume)}</span> шт.`, `оборот ${U.compact(turnover(s), '₽')}`),
-      cell('P/E', s.pe ? U.price(s.pe, 1) : '—', `EPS ${U.price(s.eps)} ₽`),
+      cell('P/E', s.pe ? U.price(s.pe, 1) : '—', `EPS ${U.price(s.eps)} ₽${API.status().mode === 'live' ? ' (справочно)' : ''}`),
       cell('Див. доходность', s.divYield ? `<span class="text-up">${U.pct(s.divYield, false)}</span>` : '—', s.divYield ? 'за 12 мес.' : 'не выплачивает'),
       cell('Капитализация', U.compact(s.marketCap, '₽'), `β ${U.price(s.beta)} · лот ${s.lot}`),
       cell('52-нед. диапазон', `${U.price(r.low)} – ${U.price(r.high)}`, `<div class="range-bar mt-2"><i style="left:${pos}%"></i></div>`),
@@ -194,7 +201,7 @@
 
   async function loadChart(ticker) {
     ticker = ticker.toUpperCase();
-    if (!API.quote(ticker)) return;
+    if (!API.quote(ticker)?.price) return;
     state.selected = state.chartTicker = ticker;
     U.store.set('selected', ticker);
     renderChartHead(); renderMetrics(); renderRelatedNews();
@@ -210,7 +217,7 @@
     const { bars, intraday, label } = await API.getHistory(state.selected, state.interval);
     if (req !== chartReq) return; // пользователь уже выбрал другой инструмент/интервал
     chart.setData(bars, { intraday });
-    state.periodStart = bars[0].open;
+    state.periodStart = bars.length ? bars[0].open : null;
     state.periodLabel = label;
     updatePeriodChange();
     state.chartLoading = false;
@@ -306,6 +313,7 @@
     const el = $('#related-news');
     if (!el) return;
     $('#related-ticker').textContent = state.selected;
+    if (!state.news.length && state.newsLoaded) { el.innerHTML = '<p class="text-xs text-muted">Новостей нет.</p>'; return; }
     if (!state.news.length) { el.innerHTML = '<span class="skeleton h-12 w-full block"></span><span class="skeleton h-12 w-full block"></span>'; return; }
     let list = state.news.filter((n) => n.tickers.includes(state.selected));
     const fallback = !list.length;
@@ -321,18 +329,22 @@
   /* =====================================================================
      Раздел «Облигации»
      ===================================================================== */
-  const ratingTag = (r, score) => `<span class="tag ${score >= 9 ? 'tag-up' : score >= 5 ? 'tag-accent' : 'tag-warn'}">${r}</span>`;
+  const ratingTag = (r, score) => `<span class="tag ${r === 'н/д' ? 'tag-muted' : score >= 9 ? 'tag-up' : score >= 5 ? 'tag-accent' : 'tag-warn'}" ${r === 'н/д' ? 'title="Рейтинг не указан в источнике"' : ''}>${r}</span>`;
 
   function renderBondSummary() {
     const b = state.bonds;
     const avg = (list) => list.reduce((a, x) => a + x.ytm, 0) / list.length;
-    const ofz = b.filter((x) => x.type === 'ofz'), corpAAA = b.filter((x) => x.type === 'corp' && x.rating === 'AAA');
+    const ofz = b.filter((x) => x.type === 'ofz'), corpAll = b.filter((x) => x.type === 'corp');
+    const aaa = corpAll.filter((x) => x.rating === 'AAA');
+    const corpAAA = aaa.length ? aaa : corpAll;
+    const corpLabel = aaa.length ? 'Ср. YTM корп. AAA' : 'Ср. YTM корп.';
     const max = [...b].sort((x, y) => y.ytm - x.ytm)[0];
     const spread = (avg(corpAAA) - avg(ofz)) * 100;
+    const spreadText = Number.isFinite(spread) ? `${U.int(spread)} б.п.` : '—';
     $('#bond-summary').innerHTML = [
       statCard('Ср. YTM ОФЗ', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark'),
-      statCard('Ср. YTM корп. AAA', U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2'),
-      statCard('Спред AAA к ОФЗ', `${U.int(spread)} б.п.`, 'премия за кредитный риск', 'move-vertical'),
+      statCard(corpLabel, U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2'),
+      statCard(aaa.length ? 'Спред AAA к ОФЗ' : 'Спред корп. к ОФЗ', spreadText, 'премия за кредитный риск', 'move-vertical'),
       statCard('Макс. доходность', `<span class="text-warn">${U.pct(max.ytm, false)}</span>`, `${U.escape(max.name)} · ${max.rating}`, 'alert-triangle'),
     ].join('');
     U.icons();
@@ -356,8 +368,8 @@
         <td>${U.price(b.price)}</td>
         <td class="font-semibold ${b.ytm >= 20 ? 'text-warn' : 'text-up'}">${U.pct(b.ytm, false)}</td>
         <td>${U.pct(b.coupon, false)}</td>
-        <td class="hidden sm:table-cell"><span class="text-muted">${COUPON_FREQ[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.</td>
-        <td class="hidden md:table-cell">${U.price(b.duration)} г.</td>
+        <td class="hidden sm:table-cell">${b.couponPeriod ? `<span class="text-muted">${COUPON_FREQ[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.` : '—'}</td>
+        <td class="hidden md:table-cell">${b.duration ? U.price(b.duration) + ' г.' : '—'}</td>
         <td class="hidden md:table-cell"><div>${U.date(b.maturity)}</div><div class="text-xs text-muted">через ${U.price(b.yearsToMaturity, 1)} г.</div></td>
         <td>${ratingTag(b.rating, b.ratingScore)}</td>
       </tr>`).join('') || emptyRow(8, 'Ничего не найдено');
@@ -368,6 +380,7 @@
   function renderYieldCurve() {
     const W = 360, H = 230, P = { l: 34, r: 12, t: 14, b: 26 };
     const pts = state.bonds.map((b) => ({ b, x: b.yearsToMaturity, y: b.ytm }));
+    if (!pts.length) return;
     const xMax = Math.ceil(Math.max(...pts.map((p) => p.x)) / 5) * 5;
     const yMin = Math.floor(Math.min(...pts.map((p) => p.y)) - 1), yCap = 30; // выбросы выше 30% прижимаем к верху
     const sx = (x) => P.l + x / xMax * (W - P.l - P.r);
@@ -413,7 +426,7 @@
         ${item('Ближайший купон', `${U.date(b.nextCoupon)} <span class="text-xs text-muted font-normal">через ${toCoupon} ${U.plural(toCoupon, ['день', 'дня', 'дней'])}</span>`)}
         ${item('Погашение', U.date(b.maturity))}
         ${item('До погашения', `${U.price(b.yearsToMaturity, 1)} г.`)}
-        ${item('Дюрация', `${U.price(b.duration)} г.`)}
+        ${item('Дюрация', b.duration ? `${U.price(b.duration)} г.` : '—')}
         ${item('Номинал', `${U.int(b.nominal)} ₽`)}
       </div>
       <p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.</p>`;
@@ -426,7 +439,7 @@
      Раздел «Дивиденды»
      ===================================================================== */
   function enrichDividends() {
-    return state.dividends.map((d) => {
+    return state.dividends.filter((d) => { const s = API.quote(d.ticker); return s && s.price; }).map((d) => {
       const s = API.quote(d.ticker);
       return { ...d, stock: s, yield: d.amount / s.price * 100, days: U.daysUntil(d.exDate), buyBy: U.prevBusinessDay(d.exDate) };
     });
@@ -440,12 +453,14 @@
     const next = upcoming[0];
     const best = [...upcoming].sort((a, b) => b.yield - a.yield)[0];
     const in30 = upcoming.filter((d) => d.days <= 30).length;
-    const approved = upcoming.filter((d) => d.status === 'approved').length;
+    const approved = upcoming.filter((d) => d.status === 'approved' || d.status === 'declared').length;
     $('#div-summary').innerHTML = [
       next ? statCard('Ближайшая отсечка', `${next.ticker} · ${U.date(next.exDate, { day: 'numeric', month: 'short' })}`, `купить до ${U.date(next.buyBy, { day: 'numeric', month: 'short' })} · через ${next.days} ${U.plural(next.days, ['день', 'дня', 'дней'])}`, 'calendar-clock') : statCard('Ближайшая отсечка', '—', ''),
       best ? statCard('Макс. доходность', `<span class="text-up">${U.pct(best.yield, false)}</span>`, `${best.ticker} · ${U.price(best.amount)} ₽ на акцию`, 'percent') : '',
       statCard('Отсечек за 30 дней', in30, `всего предстоящих: ${upcoming.length}`, 'calendar-range'),
-      statCard('Одобрено / рекоменд.', `<span class="text-up">${approved}</span> / <span class="text-warn">${upcoming.length - approved}</span>`, 'по предстоящим выплатам', 'badge-check'),
+      API.status().mode === 'live'
+        ? statCard('Выплат за 12 мес.', all.filter((d) => d.days < 0 && d.days >= -365).length, 'по данным MOEX', 'badge-check')
+        : statCard('Одобрено / рекоменд.', `<span class="text-up">${approved}</span> / <span class="text-warn">${upcoming.length - approved}</span>`, 'по предстоящим выплатам', 'badge-check'),
     ].join('');
 
     // Таблица
@@ -464,12 +479,12 @@
       html.push(`
         <tr class="clickable ${past ? 'opacity-70' : ''}" data-ticker="${d.ticker}">
           <td class="!text-left">${instrument(d.stock)}</td>
-          <td class="!text-left hidden md:table-cell text-muted">${U.escape(d.period)}</td>
+          <td class="!text-left hidden md:table-cell text-muted">${U.escape(d.period || '—')}</td>
           <td class="${past ? '' : 'font-semibold'}">${U.date(d.buyBy, { day: 'numeric', month: 'short' })}</td>
           <td><div>${U.date(d.exDate)}</div><div class="text-xs text-muted">${when}</div></td>
-          <td class="font-semibold">${U.price(d.amount)} ₽</td>
+          <td class="font-semibold">${U.price(d.amount)} ${d.currency && d.currency !== 'RUB' ? U.escape(d.currency) : '₽'}</td>
           <td><span class="tag ${d.yield >= 10 ? 'tag-up' : 'tag-accent'} num">${U.pct(d.yield, false)}</span></td>
-          <td class="hidden sm:table-cell">${d.status === 'approved' ? '<span class="tag tag-up">✓ Одобрено</span>' : '<span class="tag tag-warn">◷ Рекомендовано</span>'}</td>
+          <td class="hidden sm:table-cell">${DIV_STATUS[d.status] || ''}</td>
         </tr>`);
     }
     $('#div-table tbody').innerHTML = html.join('') || emptyRow(7, 'Нет событий по выбранным фильтрам');
@@ -491,10 +506,10 @@
             <span class="flex items-center gap-1.5 font-medium text-fg"><i data-lucide="radio" class="w-3.5 h-3.5 text-accent"></i>${U.escape(n.source)}</span>
             <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5"></i>${U.relTime(n.publishedAt)}</span>
           </div>
-          <h3 class="font-semibold leading-snug">${U.escape(n.title)}</h3>
-          <p class="text-sm text-muted line-clamp-3">${U.escape(n.summary)}</p>
+          <h3 class="font-semibold leading-snug">${n.link ? `<a href="${U.escape(n.link)}" target="_blank" rel="noopener" class="hover:text-accent transition">${U.escape(n.title)}</a>` : U.escape(n.title)}</h3>
+          ${n.summary ? `<p class="text-sm text-muted line-clamp-3">${U.escape(n.summary)}</p>` : ''}
           <div class="mt-auto pt-1 flex flex-wrap items-center gap-1.5">
-            <span class="tag ${imp.cls}">${imp.icon} ${imp.label}</span>
+            <span class="tag ${imp.cls}" ${n.autoImpact ? 'title="Автоматическая оценка по заголовку"' : ''}>${imp.icon} ${imp.label}${n.autoImpact ? '*' : ''}</span>
             ${n.tags.map((t) => `<span class="tag tag-muted">#${NEWS_TAGS[t]}</span>`).join('')}
             ${n.tickers.map((t) => `<button class="tag tag-accent hover:brightness-125" data-ticker="${t}">$${t} ${(() => { const s = API.quote(t); return s ? `<span class="${U.trend(s.changePct)}">${U.pct(s.changePct)}</span>` : ''; })()}</button>`).join('')}
           </div>
@@ -684,6 +699,25 @@
   }
 
   /* =====================================================================
+     Индикатор источника данных
+     ===================================================================== */
+  function renderDataSource() {
+    const st = API.status();
+    const el = $('#data-source');
+    const live = st.mode === 'live';
+    const time = st.updatedAt ? new Date(st.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    el.className = `hidden sm:flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md border shrink-0 ${live ? 'border-up/40 text-up' : 'border-warn/40 text-warn'}`;
+    el.title = live
+      ? 'Котировки MOEX ISS (бесплатный доступ — задержка ~15 мин), курсы ЦБ РФ, CoinGecko, новости MOEX и РБК'
+      : 'Живые источники недоступны в этом окружении — показаны сгенерированные данные';
+    el.innerHTML = live ? `<span class="status-dot open"></span>MOEX · ${time}` : '<span class="status-dot evening"></span>Демо-данные';
+    $('#footer-source').textContent = live
+      ? 'Данные: MOEX ISS (задержка ~15 мин), ЦБ РФ, CoinGecko, РБК. EPS и сектор — справочно. Оценка влияния новостей (*) — автоматическая.'
+      : 'Демонстрационные данные: живые источники недоступны в этом окружении.';
+    $('#div-status').hidden = live;
+  }
+
+  /* =====================================================================
      Роутинг вкладок (#stocks/SBER, #bonds, …)
      ===================================================================== */
   function setView(view) {
@@ -823,12 +857,13 @@
   /* =====================================================================
      Реалтайм
      ===================================================================== */
-  function onTick({ stocks, indices }) {
-    updateTape(indices);
+  function onTick({ stocks, indices, rebuildTape }) {
+    if (rebuildTape) renderTape(); else updateTape(indices);
+    renderDataSource();
     updateQuoteCells(stocks);
     if (!state.chartLoading && stocks.some((c) => c.ticker === state.chartTicker)) {
       const { bars } = API.peekHistory(state.chartTicker, state.interval);
-      chart.updateLast(bars[bars.length - 1]);
+      if (bars.length) chart.updateLast(bars[bars.length - 1]);
       renderMetrics();
       updatePeriodChange();
       document.title = `${state.chartTicker} ${U.price(API.quote(state.chartTicker).price)} ₽ — FinPulse`;
@@ -870,21 +905,34 @@
     setInterval(renderMarketStatus, 15000);
     route();
 
+    API.ready.then(renderDataSource);
+
     // Каждый блок отрисовывается, как только «пришли» его данные
-    const pIndices = API.getIndices().then((d) => { state.indices = d; renderTape(); });
+    const failed = (sel, what) => (e) => {
+      console.error('[FinPulse]', what, e);
+      const el = $(sel);
+      const msg = `<div class="text-sm text-muted py-8 text-center">Не удалось загрузить ${what}. Обновите страницу позже.</div>`;
+      if (el.tagName === 'TBODY') el.innerHTML = `<tr><td colspan="12">${msg}</td></tr>`; else el.innerHTML = msg;
+    };
+    const has = (t) => API.quote(t)?.price;
+
+    const pIndices = API.getIndices().then((d) => { state.indices = d; renderTape(); }).catch(failed('#ticker-tape', 'котировки индексов'));
     const pStocks = API.getStocks().then((d) => {
       state.stocks = d;
-      if (!API.quote(state.selected)) state.selected = 'SBER';
-      state.favorites = state.favorites.filter((t) => API.quote(t));
+      if (!has(state.selected)) state.selected = d[0].ticker;
+      state.favorites = state.favorites.filter(has);
       const [view, param] = location.hash.slice(1).split('/');
-      loadChart(view === 'stocks' && param && API.quote(param.toUpperCase()) ? param : state.selected);
+      loadChart(view === 'stocks' && param && has(param.toUpperCase()) ? param : state.selected);
       renderSectorFilter(); renderStocksTable(); renderLeaders(); renderPortfolio();
     });
-    const pNews = Promise.all([API.getNews(), pStocks]).then(([d]) => { state.news = d; renderNews(); renderRelatedNews(); });
-    const pBonds = API.getBonds().then((d) => { state.bonds = d; renderBondSummary(); renderBonds(); renderYieldCurve(); });
-    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; renderDividends(); });
+    const pNews = Promise.all([API.getNews(), pStocks]).then(([d]) => { state.news = d; state.newsLoaded = true; renderNews(); renderRelatedNews(); }).catch(failed('#news-grid', 'новости'));
+    const pBonds = API.getBonds().then((d) => {
+      if (!d.length) throw new Error('пустой список облигаций');
+      state.bonds = d; renderBondSummary(); renderBonds(); renderYieldCurve();
+    }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
+    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));
 
-    await Promise.all([pIndices, pStocks]);
+    await Promise.all([pIndices, pStocks.catch(failed('#stocks-table tbody', 'котировки акций'))]);
     renderOverview();
     API.subscribe(onTick);
     await Promise.all([pNews, pBonds, pDivs]);

@@ -248,3 +248,4 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 
 /* Нативный «крестик» у input[type=search] мешает подсказке «/» */
 #search-input::-webkit-search-cancel-button { display: none; }
+.seg[hidden] { display: none; }
