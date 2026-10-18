@@ -19,7 +19,8 @@ html.dark {
   color-scheme: dark;
 }
 
-html.light {
+html.light,
+:root[data-theme="light"] {
   --c-bg: 241 245 249;
   --c-surface: 255 255 255;
   --c-elevated: 241 245 249;

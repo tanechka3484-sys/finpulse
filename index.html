@@ -37,14 +37,19 @@
 
   <!-- Применяем сохранённую тему до отрисовки, чтобы не было «мигания» -->
   <script>
-    try { if (localStorage.getItem('fp:theme') === '"light"') document.documentElement.classList.replace('dark', 'light'); } catch (e) {}
+    (function () {
+      var light = false;
+      try { light = localStorage.getItem('fp:theme') === '"light"'; } catch (e) {}
+      document.documentElement.classList.remove('dark', 'light');
+      document.documentElement.classList.add(light ? 'light' : 'dark');
+    })();
   </script>
 </head>
 
 <body class="bg-bg text-fg font-sans antialiased min-h-screen flex flex-col">
 
   <!-- ===================== HEADER ===================== -->
-  <header class="sticky top-0 z-40 bg-bg/90 backdrop-blur border-b border-line">
+  <header class="sticky top-[env(safe-area-inset-top,0px)] z-40 bg-bg/90 backdrop-blur border-b border-line">
     <div class="relative z-20 max-w-[1440px] mx-auto px-4 h-14 flex items-center gap-3">
       <!-- Логотип -->
       <a href="#stocks" class="flex items-center gap-2 shrink-0" aria-label="FinPulse — на главную">
