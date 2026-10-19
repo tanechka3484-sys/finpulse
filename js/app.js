@@ -45,6 +45,7 @@
     positions: U.store.get('positions', { SBER: { qty: 300, avg: 281.4 }, LKOH: { qty: 5, avg: 7120 }, YDEX: { qty: 12, avg: 3890 } }),
   };
   let chart;
+  let drawings;
   let chartReq = 0;
 
   const turnover = (s) => s.price * s.volume;
@@ -203,6 +204,7 @@
     ticker = ticker.toUpperCase();
     if (!API.quote(ticker)?.price) return;
     state.selected = state.chartTicker = ticker;
+    drawings.setKey(ticker);
     U.store.set('selected', ticker);
     renderChartHead(); renderMetrics(); renderRelatedNews();
     $$('#stocks-table tbody tr[data-row]').forEach((tr) => tr.classList.toggle('selected', tr.dataset.row === ticker));
@@ -855,6 +857,7 @@
       $('meta[name="theme-color"]').content = light ? '#f1f5f9' : '#0f172a';
       U.store.set('theme', light ? 'light' : 'dark');
       chart.applyTheme();
+      drawings.redraw();
     });
 
     window.addEventListener('hashchange', route);
@@ -884,6 +887,7 @@
   async function init() {
     U.icons();
     chart = new FP.PriceChart($('#chart'), $('#chart-legend'));
+    drawings = new FP.ChartDrawings(chart, $('#chart-wrap'), $('#draw-toolbar'));
     chart.setType(state.chartType);
     setSeg($('#interval-switch'), 'interval', state.interval);
     setSeg($('#type-switch'), 'type', state.chartType);

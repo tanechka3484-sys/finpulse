@@ -254,3 +254,37 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 .cycle-pulse { transform-box: fill-box; transform-origin: center; animation: cyclePulse 2.2s ease-in-out infinite; }
 @keyframes cyclePulse { 0%, 100% { transform: scale(.8); opacity: .9; } 50% { transform: scale(1.35); opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .cycle-pulse { animation: none; } }
+
+/* ---------- Инструменты рисования ---------- */
+.draw-toolbar {
+  display: flex; align-items: center; gap: 2px; padding: 4px; flex-shrink: 0;
+  overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface));
+}
+.draw-toolbar::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) {
+  .draw-toolbar { flex-direction: column; overflow: visible; border-bottom: 0; border-right: 1px solid rgb(var(--c-line)); }
+}
+.draw-btn {
+  width: 30px; height: 26px; flex-shrink: 0; display: grid; place-items: center; border-radius: 6px;
+  color: rgb(var(--c-muted)); transition: background .12s, color .12s;
+}
+.draw-btn:hover { color: rgb(var(--c-fg)); background: rgb(var(--c-elevated)); }
+.draw-btn.active { color: rgb(var(--c-accent)); background: rgb(var(--c-accent) / .16); }
+.draw-btn.danger { color: rgb(var(--c-down)); background: rgb(var(--c-down) / .18); }
+.draw-btn:focus-visible, .draw-w:focus-visible, .draw-swatch:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 1px; }
+.draw-sep { flex-shrink: 0; width: 1px; height: 18px; margin: 0 3px; background: rgb(var(--c-line)); }
+@media (min-width: 640px) { .draw-sep { width: 18px; height: 1px; margin: 3px 0; } }
+
+.draw-selbar {
+  position: absolute; top: 34px; left: 50%; transform: translateX(-50%); z-index: 25;
+  display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 10px;
+  background: rgb(var(--c-surface)); border: 1px solid rgb(var(--c-line)); box-shadow: 0 8px 24px -10px rgb(0 0 0 / .5);
+}
+.draw-selbar.hidden { display: none; }
+.draw-swatch { width: 16px; height: 16px; border-radius: 99px; border: 2px solid rgb(var(--c-surface)); box-shadow: 0 0 0 1px rgb(var(--c-line)); }
+.draw-swatch.active { box-shadow: 0 0 0 2px rgb(var(--c-fg)); }
+.draw-w { min-width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: rgb(var(--c-muted)); }
+.draw-w:hover, .draw-w.active { background: rgb(var(--c-elevated)); color: rgb(var(--c-fg)); }
+.draw-w span { display: block; width: 14px; background: currentColor; border-radius: 2px; }
+.draw-sep-h { width: 1px; height: 16px; background: rgb(var(--c-line)); margin: 0 2px; }
