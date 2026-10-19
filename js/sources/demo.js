@@ -45,6 +45,8 @@ FP.DemoSource = (() => {
     ratingScore: RATING_SCORE[b.rating] ?? 0,
     yearsToMaturity: Math.max(0, U.daysUntil(b.maturity) / 365.25),
     couponValue: b.nominal * b.coupon / 100 * b.couponPeriod / 365,   // ₽ за один купон
+    currency: 'RUB', country: 'RU', kind: b.type === 'ofz' ? 'fixed' : 'corp',
+    turnover: Math.round(1e6 + (U.hash(b.isin) % 1e8)),
     nextCoupon: nextCouponDate(b.maturity, b.couponPeriod),
   }));
 
@@ -238,6 +240,16 @@ FP.DemoSource = (() => {
       return { low: Math.min(...bars.map((b) => b.low)), high: Math.max(...bars.map((b) => b.high)) };
     },
     sparkline: (ticker, n = 30) => history(ticker).daily.slice(-n).map((b) => b.close),
+
+    /** Универсум скринера: в демо — те же 13 бумаг. */
+    async getUniverse() {
+      await wait();
+      const r = (d, n) => (d.length > n ? (d[d.length - 1].close / d[d.length - 1 - n].close - 1) * 100 : null);
+      return stocks.map((s) => {
+        const d = history(s.ticker).daily;
+        return Object.assign(s, { country: s.isin.slice(0, 2), currency: 'RUB', r1m: r(d, 21), r3m: r(d, 63), r1y: r(d, 252) });
+      });
+    },
 
     /** Дневные бары индекса (~13 мес.), заканчивающиеся текущим значением. */
     async getIndexHistory(symbol) {

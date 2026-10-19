@@ -63,6 +63,12 @@ FP.LiveSource = (() => {
   const stocks = M.stocks.map((s) => ({ ...s, price: null, changePct: 0, change: 0, prevClose: null, volume: 0, divYield: 0 }));
   const byTicker = new Map(stocks.map((s) => [s.ticker, s]));
   const hist = new Map(TICKERS.map((t) => [t, { daily: [], last: {} }]));
+  const SHARES = 'engines/stock/markets/shares/boards/TQBR';
+  const FOREIGN = 'engines/stock/markets/foreignshares/boards/FQBR';
+  /** История бумаги (создаётся по требованию — для бумаг из скринера). */
+  const histOf = (t) => { if (!hist.has(t)) hist.set(t, { daily: [], last: {} }); return hist.get(t); };
+  /** Режим торгов бумаги: основные акции TQBR или иностранные FQBR. */
+  const baseOf = (t) => (byTicker.get(t) && byTicker.get(t).base) || SHARES;
   let indices = [];
   let dividends = [];
   let stocksLoad = null;   // промис первичной загрузки свечей и дивидендов
@@ -266,6 +272,9 @@ FP.LiveSource = (() => {
       yearsToMaturity: Math.max(0, U.daysUntil(s.MATDATE) / 365.25),
       couponValue: num(s.COUPONVALUE) ?? 0, nextCoupon: s.NEXTCOUPON && !String(s.NEXTCOUPON).startsWith('0000') ? s.NEXTCOUPON : s.MATDATE,
       turnover: num(m.VALTODAY) ?? 0,
+      currency: !s.FACEUNIT || s.FACEUNIT === 'SUR' ? 'RUB' : s.FACEUNIT,
+      country: String(s.ISIN || '').slice(0, 2) || 'RU',
+      kind: type !== 'ofz' ? 'corp' : /^ОФЗ\s?29/.test(name) ? 'float' : /^ОФЗ\s?52/.test(name) ? 'linker' : 'fixed',
     };
   }
 
@@ -286,6 +295,76 @@ FP.LiveSource = (() => {
       s.avgVolume = d.length ? d.slice(-20).reduce((a, b) => a + b.volume, 0) / Math.min(20, d.length) : s.volume;
     }
     return stocks.filter((s) => s.price);
+  }
+
+  /* ---------------- Универсум для скринера ---------------- */
+  /** Отрасль по составу отраслевых индексов MOEX. */
+  const SECTOR_INDICES = {
+    MOEXOG: 'Энергетика', MOEXFN: 'Финансы', MOEXIT: 'IT', MOEXCN: 'Ритейл', MOEXMM: 'Металлы и добыча',
+    MOEXEU: 'Электроэнергетика', MOEXTL: 'Телеком', MOEXCH: 'Химия', MOEXTN: 'Транспорт', MOEXRE: 'Девелопмент',
+  };
+  async function sectorMap() {
+    const m = new Map();
+    await Promise.allSettled(Object.entries(SECTOR_INDICES).map(async ([idx, name]) => {
+      const j = await iss(`statistics/engines/stock/markets/index/analytics/${idx}`, { limit: 100 });
+      table(j.analytics).forEach((r) => { const t = r.ticker || r.secids; if (t && !m.has(t)) m.set(t, name); });
+    }));
+    return m;
+  }
+
+  /** Цены закрытия всех бумаг режима на дату ~N дней назад (ближайший торговый день). */
+  async function closesAgo(base, days) {
+    for (let k = 0; k < 7; k++) {
+      const date = daysAgo(days + k), out = new Map();
+      for (let start = 0; start < 3000;) {
+        const j = await iss(`history/${base}/securities`, { date, start, 'history.columns': 'SECID,CLOSE,LEGALCLOSEPRICE' });
+        const rows = table(j.history);
+        rows.forEach((r) => { const c = first(r.LEGALCLOSEPRICE, r.CLOSE); if (c) out.set(r.SECID, c); });
+        if (rows.length < 100) break;
+        start += rows.length;
+      }
+      if (out.size) return out;
+    }
+    return new Map();
+  }
+
+  async function boardQuotes(base) {
+    const j = await iss(`${base}/securities`, { 'iss.only': 'securities,marketdata' });
+    const md = new Map(table(j.marketdata).map((r) => [r.SECID, r]));
+    return table(j.securities).filter((s) => md.has(s.SECID)).map((sec) => ({ sec, md: md.get(sec.SECID) }));
+  }
+
+  let universeLoad = null;
+  async function loadUniverse() {
+    await (stocksLoad ||= loadStocks());
+    const [main, foreign, sectors] = await Promise.allSettled([boardQuotes(SHARES), boardQuotes(FOREIGN), sectorMap()]);
+    const secMap = sectors.status === 'fulfilled' ? sectors.value : new Map();
+    const list = [];
+    const add = (rows, base) => rows.forEach((q) => {
+      const t = q.sec.SECID;
+      let s = byTicker.get(t);
+      if (!s) {
+        s = { ticker: t, name: q.sec.SHORTNAME || t, isin: q.sec.ISIN, sector: null, eps: null, beta: null, lot: 1, base, extra: true, divYield: null };
+        if (!applyQuote(s, q)) return;
+        byTicker.set(t, s);
+      }
+      s.country = String(s.isin || q.sec.ISIN || '').slice(0, 2) || 'RU';
+      s.currency = !q.sec.CURRENCYID || q.sec.CURRENCYID === 'SUR' ? 'RUB' : q.sec.CURRENCYID;
+      s.sector = s.sector || secMap.get(t) || (base === FOREIGN ? 'Иностранные' : 'Прочее');
+      list.push(s);
+    });
+    if (main.status === 'fulfilled') add(main.value, SHARES); else console.warn('[FinPulse] TQBR:', main.reason);
+    if (foreign.status === 'fulfilled') add(foreign.value, FOREIGN); else console.warn('[FinPulse] FQBR:', foreign.reason);
+    if (!list.length) list.push(...stocks.filter((s) => s.price));
+
+    // Доходность за 1 / 3 / 12 месяцев: ядро — по своим свечам, остальные — по истории торгов
+    const periods = [['r1m', 30], ['r3m', 91], ['r1y', 365]];
+    const results = await Promise.allSettled(periods.map(([, d]) => closesAgo(SHARES, d)));
+    periods.forEach(([key], i) => {
+      const map = results[i].status === 'fulfilled' ? results[i].value : new Map();
+      list.forEach((s) => { const c = map.get(s.ticker); s[key] = c ? (s.price / c - 1) * 100 : null; });
+    });
+    return list;
   }
 
   /* ---------------- Опрос («реалтайм») ---------------- */
@@ -338,13 +417,17 @@ FP.LiveSource = (() => {
       return (stocksLoad ||= loadStocks());
     },
 
+    /** Все акции TQBR (+ иностранные FQBR) для скринера: котировки, страна, отрасль, доходности. */
+    getUniverse() {
+      return (universeLoad ||= loadUniverse());
+    },
+
     async getBonds() {
       const [ofz, corp] = await Promise.all([bondBoard('TQOB'), bondBoard('TQCB')]);
-      const ofzList = ofz.filter((b) => /^ОФЗ\s?26\d{3}/.test(b.s.SHORTNAME)).map((b) => toBond(b, 'ofz'));
-      const corpList = corp
-        .filter((b) => b.s.FACEUNIT === 'SUR' && b.ytm > 0 && b.ytm < 60 && num(b.s.COUPONPERCENT) > 0)
-        .sort((a, b) => (num(b.m.VALTODAY) || 0) - (num(a.m.VALTODAY) || 0))
-        .slice(0, 15).map((b) => toBond(b, 'corp'));
+      // ОФЗ всех видов: 26xxx — постоянный купон, 29xxx — флоатеры, 52xxx — линкеры
+      const ofzList = ofz.filter((b) => /^ОФЗ/.test(b.s.SHORTNAME) && b.ytm < 60).map((b) => toBond(b, 'ofz'));
+      // Все корпоративные выпуски с адекватной доходностью — для скринера
+      const corpList = corp.filter((b) => b.ytm > 0 && b.ytm < 60).map((b) => toBond(b, 'corp'));
       return [...ofzList, ...corpList];
     },
 
@@ -361,33 +444,33 @@ FP.LiveSource = (() => {
     quote: (t) => byTicker.get(t),
 
     async getHistory(t, interval = '1Y') {
-      const h = hist.get(t);
+      const h = histOf(t), base = baseOf(t);
       let res;
       if (interval === '1D') {
-        const rows = await candles(t, 10, daysAgo(7));
+        const rows = await candles(t, 10, daysAgo(7), base);
         const lastDay = rows.length ? dayKey(rows[rows.length - 1].time) : null;
         res = { bars: rows.filter((r) => dayKey(r.time) === lastDay), intraday: true, label: 'день' };
       } else if (interval === '1W') {
-        res = { bars: await candles(t, 60, daysAgo(7)), intraday: true, label: 'неделю' };
+        res = { bars: await candles(t, 60, daysAgo(7), base), intraday: true, label: 'неделю' };
       } else if (interval === 'ALL') {
-        res = { bars: await candles(t, 7, daysAgo(5 * 365)), intraday: false, label: '5 лет' };
+        res = { bars: await candles(t, 7, daysAgo(5 * 365), base), intraday: false, label: '5 лет' };
       } else {
-        if (!h.daily.length) h.daily = await candles(t, 24, daysAgo(400));
+        if (!h.daily.length) h.daily = await candles(t, 24, daysAgo(400), base);
         res = { bars: h.daily.slice(interval === '1M' ? -22 : -252), intraday: false, label: interval === '1M' ? 'месяц' : 'год' };
       }
       if (!res.bars.length) res = { bars: h.daily.slice(-22), intraday: false, label: 'месяц' };
       h.last[interval] = res;
       return res;
     },
-    peekHistory: (t, interval) => hist.get(t).last[interval] || { bars: [] },
+    peekHistory: (t, interval) => histOf(t).last[interval] || { bars: [] },
 
     yearRange(t) {
-      const bars = hist.get(t).daily.slice(-252);
+      const bars = histOf(t).daily.slice(-252);
       const s = byTicker.get(t);
       if (!bars.length) return { low: s.dayLow ?? s.price, high: s.dayHigh ?? s.price };
       return { low: Math.min(...bars.map((b) => b.low)), high: Math.max(...bars.map((b) => b.high)) };
     },
-    sparkline: (t, n = 30) => hist.get(t).daily.slice(-n).map((b) => b.close),
+    sparkline: (t, n = 30) => histOf(t).daily.slice(-n).map((b) => b.close),
 
     /** Дневные свечи индекса (IMOEX, RTSI) примерно за 13 месяцев. */
     getIndexHistory: (symbol) => candles(symbol, 24, daysAgo(400), 'engines/stock/markets/index'),

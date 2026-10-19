@@ -36,9 +36,6 @@
     periodLabel: '',
     interval: U.store.get('interval', '1Y'),
     chartType: U.store.get('chartType', 'candles'),
-    sector: 'all',
-    sort: { key: 'turnover', dir: -1 },
-    bondType: 'all', bondSort: { key: 'ytm', dir: -1 }, bondQuery: '',
     divMode: 'upcoming', divStatus: 'all',
     newsTag: 'all', newsImpact: 'all',
     favorites: U.store.get('favorites', ['SBER', 'LKOH', 'YDEX', 'X5']),
@@ -79,17 +76,6 @@
   function setSeg(container, attr, value) {
     $$(`[data-${attr}]`, container).forEach((b) => b.classList.toggle('active', b.dataset[attr] === value));
   }
-  function markSorted(table, sort) {
-    $$('th[data-sort]', table).forEach((th) => {
-      th.classList.toggle('sorted', th.dataset.sort === sort.key);
-      th.classList.toggle('asc', th.dataset.sort === sort.key && sort.dir > 0);
-    });
-  }
-  const sorter = ({ key, dir }) => (a, b) => {
-    const x = a[key] ?? -Infinity, y = b[key] ?? -Infinity;
-    return (typeof x === 'string' ? x.localeCompare(y, 'ru') : x - y) * dir;
-  };
-
   function toast(msg) {
     const el = $('#toast');
     el.innerHTML = `<div class="toast">${msg}</div>`;
@@ -280,37 +266,6 @@
     $('#leaders-active').innerHTML = by((a, b) => turnover(b) - turnover(a)).map((s) => row(s, (x) => `<span class="text-xs text-muted num">${U.compact(turnover(x), '₽')}</span>`)).join('');
   }
 
-  function renderSectorFilter() {
-    $('#sector-filter').innerHTML = SECTORS.map((sec) => {
-      const n = sec === 'all' ? state.stocks.length : state.stocks.filter((s) => s.sector === sec).length;
-      return `<button class="chip ${state.sector === sec ? 'active' : ''}" data-sector="${sec}">${sec === 'all' ? 'Все' : sec} <span class="opacity-60">${n}</span></button>`;
-    }).join('');
-  }
-
-  function renderStocksTable() {
-    const tbody = $('#stocks-table tbody');
-    const rows = state.stocks
-      .filter((s) => state.sector === 'all' || s.sector === state.sector)
-      .map((s) => ({ ...s, turnover: turnover(s), _ref: s }))
-      .sort(sorter(state.sort));
-    $('#stocks-count').textContent = rows.length;
-    tbody.innerHTML = rows.map(({ _ref: s }) => `
-      <tr class="clickable ${s.ticker === state.selected ? 'selected' : ''}" data-row="${s.ticker}">
-        <td>${starBtn(s.ticker)}</td>
-        <td class="!text-left">${instrument(s)}</td>
-        <td class="!text-left hidden md:table-cell"><span class="tag tag-muted">${s.sector}</span></td>
-        <td class="font-medium">${qPrice(s)}</td>
-        <td>${qPct(s, 'font-medium')}</td>
-        <td class="hidden sm:table-cell text-muted">${U.compact(turnover(s))}</td>
-        <td class="hidden lg:table-cell text-muted">${U.compact(s.marketCap)}</td>
-        <td class="hidden lg:table-cell">${s.pe ? U.price(s.pe, 1) : '—'}</td>
-        <td class="hidden md:table-cell ${s.divYield >= 10 ? 'text-up font-medium' : ''}">${s.divYield ? U.pct(s.divYield, false) : '—'}</td>
-        <td class="hidden sm:table-cell">${U.sparkline(API.sparkline(s.ticker))}</td>
-      </tr>`).join('') || emptyRow(10, 'Нет бумаг в секторе');
-    markSorted($('#stocks-table'), state.sort);
-    U.icons();
-  }
-
   function renderRelatedNews() {
     const el = $('#related-news');
     if (!el) return;
@@ -336,15 +291,15 @@
   function renderBondSummary() {
     const b = state.bonds;
     const avg = (list) => list.reduce((a, x) => a + x.ytm, 0) / list.length;
-    const ofz = b.filter((x) => x.type === 'ofz'), corpAll = b.filter((x) => x.type === 'corp');
+    const ofz = b.filter((x) => x.type === 'ofz' && x.kind === 'fixed'), corpAll = b.filter((x) => x.type === 'corp' && x.currency === 'RUB');
     const aaa = corpAll.filter((x) => x.rating === 'AAA');
     const corpAAA = aaa.length ? aaa : corpAll;
     const corpLabel = aaa.length ? 'Ср. YTM корп. AAA' : 'Ср. YTM корп.';
-    const max = [...b].sort((x, y) => y.ytm - x.ytm)[0];
+    const max = [...b].filter((x) => x.currency === 'RUB').sort((x, y) => y.ytm - x.ytm)[0] || b[0];
     const spread = (avg(corpAAA) - avg(ofz)) * 100;
     const spreadText = Number.isFinite(spread) ? `${U.int(spread)} б.п.` : '—';
     $('#bond-summary').innerHTML = [
-      statCard('Ср. YTM ОФЗ', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark'),
+      statCard('Ср. YTM ОФЗ-ПД', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark'),
       statCard(corpLabel, U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2'),
       statCard(aaa.length ? 'Спред AAA к ОФЗ' : 'Спред корп. к ОФЗ', spreadText, 'премия за кредитный риск', 'move-vertical'),
       statCard('Макс. доходность', `<span class="text-warn">${U.pct(max.ytm, false)}</span>`, `${U.escape(max.name)} · ${max.rating}`, 'alert-triangle'),
@@ -352,36 +307,12 @@
     U.icons();
   }
 
-  function renderBonds() {
-    const q = state.bondQuery.trim().toLowerCase();
-    const rows = state.bonds
-      .filter((b) => state.bondType === 'all' || b.type === state.bondType)
-      .filter((b) => !q || [b.name, b.isin, b.secid, b.issuer].some((v) => v.toLowerCase().includes(q)))
-      .sort(sorter(state.bondSort));
-    $('#bonds-count').textContent = rows.length;
-    $('#bonds-table tbody').innerHTML = rows.map((b) => `
-      <tr class="clickable" data-bond="${b.isin}">
-        <td class="!text-left">
-          <div class="flex items-center gap-2.5">
-            <span class="ticker-logo" style="background:${b.type === 'ofz' ? 'rgb(var(--c-accent))' : U.logoColor(b.issuer)}">${b.type === 'ofz' ? 'ОФЗ' : U.escape(b.name.slice(0, 3))}</span>
-            <div><div class="font-semibold leading-tight">${U.highlight(b.name, q)}</div><div class="text-xs text-muted font-mono">${U.highlight(b.isin, q)}</div></div>
-          </div>
-        </td>
-        <td>${U.price(b.price)}</td>
-        <td class="font-semibold ${b.ytm >= 20 ? 'text-warn' : 'text-up'}">${U.pct(b.ytm, false)}</td>
-        <td>${U.pct(b.coupon, false)}</td>
-        <td class="hidden sm:table-cell">${b.couponPeriod ? `<span class="text-muted">${COUPON_FREQ[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.` : '—'}</td>
-        <td class="hidden md:table-cell">${b.duration ? U.price(b.duration) + ' г.' : '—'}</td>
-        <td class="hidden md:table-cell"><div>${U.date(b.maturity)}</div><div class="text-xs text-muted">через ${U.price(b.yearsToMaturity, 1)} г.</div></td>
-        <td>${ratingTag(b.rating, b.ratingScore)}</td>
-      </tr>`).join('') || emptyRow(8, 'Ничего не найдено');
-    markSorted($('#bonds-table'), state.bondSort);
-  }
-
   /** Кривая доходности — лёгкий SVG без библиотек. */
   function renderYieldCurve() {
     const W = 360, H = 230, P = { l: 34, r: 12, t: 14, b: 26 };
-    const pts = state.bonds.map((b) => ({ b, x: b.yearsToMaturity, y: b.ytm }));
+    // ОФЗ с постоянным купоном + 15 самых торгуемых рублёвых корпоративных выпусков
+    const corp = state.bonds.filter((b) => b.type === 'corp' && b.currency === 'RUB').sort((a, b) => b.turnover - a.turnover).slice(0, 15);
+    const pts = [...state.bonds.filter((b) => b.type === 'ofz' && b.kind === 'fixed'), ...corp].map((b) => ({ b, x: b.yearsToMaturity, y: b.ytm }));
     if (!pts.length) return;
     const xMax = Math.ceil(Math.max(...pts.map((p) => p.x)) / 5) * 5;
     const yMin = Math.floor(Math.min(...pts.map((p) => p.y)) - 1), yCap = 30; // выбросы выше 30% прижимаем к верху
@@ -769,8 +700,8 @@
 
       const jump = t.closest('[data-sector-jump]');
       if (jump) {
-        state.sector = jump.dataset.sectorJump; renderSectorFilter(); renderStocksTable();
-        $('#stocks-table').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        FP.Screener.showSector(jump.dataset.sectorJump);
+        $('#stock-screener').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
 
@@ -789,30 +720,6 @@
       setSeg($('#type-switch'), 'type', state.chartType);
       chart.setType(state.chartType);
     });
-
-    // Фильтр секторов и сортировки
-    $('#sector-filter').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-sector]');
-      if (!b) return;
-      state.sector = b.dataset.sector; renderSectorFilter(); renderStocksTable();
-    });
-    const sortable = (table, key, render) => $(`${table} thead`).addEventListener('click', (e) => {
-      const th = e.target.closest('th[data-sort]');
-      if (!th) return;
-      const s = state[key];
-      state[key] = { key: th.dataset.sort, dir: s.key === th.dataset.sort ? -s.dir : (['ticker', 'name', 'sector', 'maturity'].includes(th.dataset.sort) ? 1 : -1) };
-      render();
-    });
-    sortable('#stocks-table', 'sort', renderStocksTable);
-    sortable('#bonds-table', 'bondSort', renderBonds);
-
-    // Облигации
-    $('#bond-type').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-bondtype]');
-      if (!b) return;
-      state.bondType = b.dataset.bondtype; setSeg($('#bond-type'), 'bondtype', state.bondType); renderBonds();
-    });
-    $('#bond-query').addEventListener('input', U.debounce((e) => { state.bondQuery = e.target.value; renderBonds(); }, 100));
 
     // Дивиденды
     $('#div-mode').addEventListener('click', (e) => {
@@ -891,7 +798,6 @@
     chart.setType(state.chartType);
     setSeg($('#interval-switch'), 'interval', state.interval);
     setSeg($('#type-switch'), 'type', state.chartType);
-    setSeg($('#bond-type'), 'bondtype', state.bondType);
     setSeg($('#div-mode'), 'divmode', state.divMode);
     setSeg($('#div-status'), 'divstatus', state.divStatus);
     setSeg($('#news-tag'), 'newstag', state.newsTag);
@@ -908,6 +814,10 @@
     ['#leaders-gainers', '#leaders-losers', '#leaders-active'].forEach((s) => {
       $(s).innerHTML = Array.from({ length: 5 }, () => '<div class="flex items-center gap-3 py-2"><span class="skeleton w-8 h-8"></span><span class="skeleton h-4 flex-1"></span><span class="skeleton h-4 w-14"></span></div>').join('');
     });
+
+    const ui = { starBtn, instrument, qPrice, qPct, ratingTag, couponFreq: COUPON_FREQ, selected: () => state.selected };
+    FP.Screener.initStocks($('#stock-screener'), ui);
+    FP.Screener.initBonds($('#bond-screener'), ui);
 
     bindEvents();
     initSearch();
@@ -933,12 +843,15 @@
       state.favorites = state.favorites.filter(has);
       const [view, param] = location.hash.slice(1).split('/');
       loadChart(view === 'stocks' && param && has(param.toUpperCase()) ? param : state.selected);
-      renderSectorFilter(); renderStocksTable(); renderLeaders(); renderPortfolio();
+      FP.Screener.setStocks(d); renderLeaders(); renderPortfolio();
+      // Полный рынок для скринера догружается отдельно; пока показываем основные бумаги
+      API.getUniverse().then((all) => { if (all.length) FP.Screener.setStocks(all); })
+        .catch((e) => console.warn('[FinPulse] Универсум скринера недоступен:', e));
     });
     const pNews = Promise.all([API.getNews(), pStocks]).then(([d]) => { state.news = d; state.newsLoaded = true; renderNews(); renderRelatedNews(); }).catch(failed('#news-grid', 'новости'));
     const pBonds = API.getBonds().then((d) => {
       if (!d.length) throw new Error('пустой список облигаций');
-      state.bonds = d; renderBondSummary(); renderBonds(); renderYieldCurve();
+      state.bonds = d; renderBondSummary(); FP.Screener.setBonds(d); renderYieldCurve();
       if (state.view === 'cycles') renderCycles();
     }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
     const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));

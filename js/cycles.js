@@ -117,7 +117,7 @@ FP.Cycles = (() => {
     }
 
     // 3. Наклон кривой ОФЗ: длинные (≥10 лет) минус короткие (≤3 лет)
-    const ofz = bonds.filter((b) => b.type === 'ofz');
+    const ofz = bonds.filter((b) => b.type === 'ofz' && (b.kind || 'fixed') === 'fixed');
     const short = avg(ofz.filter((b) => b.yearsToMaturity <= 3).map((b) => b.ytm));
     const long = avg(ofz.filter((b) => b.yearsToMaturity >= 10).map((b) => b.ytm));
     if (short != null && long != null) {

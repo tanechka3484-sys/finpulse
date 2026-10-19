@@ -288,3 +288,15 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 .draw-w:hover, .draw-w.active { background: rgb(var(--c-elevated)); color: rgb(var(--c-fg)); }
 .draw-w span { display: block; width: 14px; background: currentColor; border-radius: 2px; }
 .draw-sep-h { width: 1px; height: 16px; background: rgb(var(--c-line)); margin: 0 2px; }
+
+/* ---------- Скринер ---------- */
+.scr-panel { display: none; padding: 0 1rem 1rem; gap: .9rem 1.5rem; grid-template-columns: 1fr; }
+.scr-panel.open { display: grid; }
+@media (min-width: 768px) { .scr-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .scr-panel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.scr-group { min-width: 0; }
+.scr-label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: rgb(var(--c-muted)); margin-bottom: .45rem; }
+.scr-nums { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem .9rem; }
+@media (min-width: 480px) { .scr-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.scr-num { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem; font-size: .78rem; line-height: 1.2; }
+.scr-panel .seg { flex-wrap: wrap; }

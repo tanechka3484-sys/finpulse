@@ -42,6 +42,7 @@ FP.API = (() => {
     getNews: call('getNews'),
     getHistory: call('getHistory'),
     getIndexHistory: call('getIndexHistory'),
+    getUniverse: call('getUniverse'),
 
     // Синхронные методы вызываются только после загрузки акций
     quote: (t) => src && src.quote(t),

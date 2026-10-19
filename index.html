@@ -180,31 +180,25 @@
         <div class="card"><h3 class="card-title"><i data-lucide="flame" class="w-4 h-4 text-warn"></i>Самые торгуемые</h3><div id="leaders-active" class="mt-2"></div></div>
       </div>
 
-      <!-- Таблица акций -->
-      <div class="card !p-0">
+      <!-- Скринер акций (js/screener.js) -->
+      <div class="card !p-0" id="stock-screener">
         <div class="p-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-base font-semibold">Все акции <span id="stocks-count" class="text-muted font-normal"></span></h2>
-          <div id="sector-filter" class="flex flex-wrap gap-1.5"></div>
+          <h2 class="text-base font-semibold">Скринер акций <span data-count class="text-muted font-normal text-sm"></span></h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="relative">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-muted absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+              <input id="scr-stocks-q" type="search" data-q placeholder="Тикер, компания, ISIN" class="input input-icon w-44" />
+            </div>
+            <button type="button" class="chip md:hidden" data-toggle-filters><span data-active>Фильтры</span></button>
+            <span class="hidden md:inline text-xs text-muted" data-active>Фильтры</span>
+            <button type="button" class="chip" data-reset hidden>Сбросить</button>
+          </div>
         </div>
+        <div class="scr-panel"></div>
         <div class="table-wrap">
-          <table class="data-table" id="stocks-table">
-            <thead>
-              <tr>
-                <th class="w-8"></th>
-                <th data-sort="ticker" class="text-left">Инструмент</th>
-                <th data-sort="sector" class="text-left hidden md:table-cell">Сектор</th>
-                <th data-sort="price">Цена, ₽</th>
-                <th data-sort="changePct">Изм.</th>
-                <th data-sort="turnover" class="hidden sm:table-cell">Оборот</th>
-                <th data-sort="marketCap" class="hidden lg:table-cell">Капитализация</th>
-                <th data-sort="pe" class="hidden lg:table-cell">P/E</th>
-                <th data-sort="divYield" class="hidden md:table-cell">Див. дох.</th>
-                <th class="hidden sm:table-cell">30 дн.</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+          <table class="data-table" id="stocks-table"><thead></thead><tbody></tbody></table>
         </div>
+        <div class="p-3 text-center"><button type="button" class="chip" data-more hidden></button></div>
       </div>
     </section>
 
@@ -213,36 +207,24 @@
       <div id="bond-summary" class="grid gap-4 grid-cols-2 lg:grid-cols-4"></div>
 
       <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div class="card !p-0 min-w-0">
-          <div class="p-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-base font-semibold">Облигации <span id="bonds-count" class="text-muted font-normal"></span></h2>
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="relative">
-                <i data-lucide="filter" class="w-3.5 h-3.5 text-muted absolute left-2.5 top-1/2 -translate-y-1/2"></i>
-                <input id="bond-query" type="search" placeholder="Название или ISIN" class="input input-icon w-44" />
-              </div>
-              <div class="seg" id="bond-type">
-                <button data-bondtype="all">Все</button><button data-bondtype="ofz">ОФЗ</button><button data-bondtype="corp">Корп.</button>
-              </div>
+        <div class="card !p-0 min-w-0" id="bond-screener">
+        <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-semibold">Скринер облигаций <span data-count class="text-muted font-normal text-sm"></span></h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="relative">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-muted absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+              <input id="scr-bonds-q" type="search" data-q placeholder="Название, эмитент, ISIN" class="input input-icon w-44" />
             </div>
+            <button type="button" class="chip md:hidden" data-toggle-filters><span data-active>Фильтры</span></button>
+            <span class="hidden md:inline text-xs text-muted" data-active>Фильтры</span>
+            <button type="button" class="chip" data-reset hidden>Сбросить</button>
           </div>
+        </div>
+        <div class="scr-panel"></div>
           <div class="table-wrap">
-            <table class="data-table" id="bonds-table">
-              <thead>
-                <tr>
-                  <th data-sort="name" class="text-left">Выпуск</th>
-                  <th data-sort="price">Цена, %</th>
-                  <th data-sort="ytm">YTM</th>
-                  <th data-sort="coupon">Купон</th>
-                  <th data-sort="couponPeriod" class="hidden sm:table-cell">Период</th>
-                  <th data-sort="duration" class="hidden md:table-cell">Дюрация</th>
-                  <th data-sort="maturity" class="hidden md:table-cell">Погашение</th>
-                  <th data-sort="ratingScore">Рейтинг</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+            <table class="data-table" id="bonds-table"><thead></thead><tbody></tbody></table>
           </div>
+          <div class="p-3 text-center"><button type="button" class="chip" data-more hidden></button></div>
         </div>
 
         <div class="card">
@@ -379,12 +361,14 @@
   <!-- Приложение (обычные скрипты — работает даже при открытии через file://) -->
   <script src="js/utils.js"></script>
   <script src="js/mock-data.js"></script>
+  <script src="js/fundamentals.js"></script>
   <script src="js/sources/demo.js"></script>
   <script src="js/sources/live.js"></script>
   <script src="js/api.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/drawings.js"></script>
   <script src="js/cycles.js"></script>
+  <script src="js/screener.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
