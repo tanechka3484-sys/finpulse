@@ -300,3 +300,22 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 @media (min-width: 480px) { .scr-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .scr-num { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem; font-size: .78rem; line-height: 1.2; }
 .scr-panel .seg { flex-wrap: wrap; }
+
+/* ---------- Калькуляторы ---------- */
+.calc-tabs { display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.calc-tabs::-webkit-scrollbar { display: none; }
+@media (min-width: 1024px) { .calc-tabs { flex-wrap: wrap; overflow: visible; } }
+.calc-tab {
+  display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; white-space: nowrap;
+  padding: .5rem .85rem; border-radius: .65rem; font-size: .84rem; font-weight: 500;
+  border: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); color: rgb(var(--c-muted));
+  transition: color .15s, border-color .15s, background .15s;
+}
+.calc-tab:hover { color: rgb(var(--c-fg)); border-color: rgb(var(--c-accent) / .5); }
+.calc-tab.active { color: rgb(var(--c-accent)); border-color: rgb(var(--c-accent)); background: rgb(var(--c-accent) / .1); }
+.calc-field { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.calc-label { font-size: .75rem; color: rgb(var(--c-muted)); }
+.calc-field .input { height: 2.3rem; font-size: .9rem; }
+.calc-hero { border-color: rgb(var(--c-accent) / .45); background: linear-gradient(180deg, rgb(var(--c-accent) / .08), transparent 70%), rgb(var(--c-surface)); }
+.calc-table { max-height: 26rem; overflow-y: auto; }
+.calc-table thead th { position: sticky; top: 0; z-index: 1; background: rgb(var(--c-surface)); }

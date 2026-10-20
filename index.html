@@ -97,6 +97,7 @@
         <li><a href="#dividends" data-nav="dividends" class="nav-link"><i data-lucide="calendar-days" class="w-4 h-4"></i>Дивиденды</a></li>
         <li><a href="#news" data-nav="news" class="nav-link"><i data-lucide="newspaper" class="w-4 h-4"></i>Новости</a></li>
         <li><a href="#cycles" data-nav="cycles" class="nav-link"><i data-lucide="refresh-ccw" class="w-4 h-4"></i>Циклы</a></li>
+        <li><a href="#calc" data-nav="calc" class="nav-link"><i data-lucide="calculator" class="w-4 h-4"></i>Калькуляторы</a></li>
         <li><a href="#portfolio" data-nav="portfolio" class="nav-link"><i data-lucide="star" class="w-4 h-4"></i>Портфель<span id="fav-count" class="nav-badge">0</span></a></li>
       </ul>
     </nav>
@@ -306,6 +307,11 @@
       </div>
     </section>
 
+    <!-- ========== КАЛЬКУЛЯТОРЫ (js/calculators.js) ========== -->
+    <section data-view="calc" class="view space-y-5" hidden>
+      <div id="calc-root" class="space-y-5"></div>
+    </section>
+
     <!-- ========== ПОРТФЕЛЬ / ИЗБРАННОЕ ========== -->
     <section data-view="portfolio" class="view space-y-5" hidden>
       <div id="pf-summary" class="grid gap-4 grid-cols-2 lg:grid-cols-4"></div>
@@ -369,6 +375,7 @@
   <script src="js/drawings.js"></script>
   <script src="js/cycles.js"></script>
   <script src="js/screener.js"></script>
+  <script src="js/calculators.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
   const U = FP.U, API = FP.API;
   const { $, $$ } = U;
 
-  const VIEWS = ['stocks', 'bonds', 'dividends', 'news', 'cycles', 'portfolio'];
+  const VIEWS = ['stocks', 'bonds', 'dividends', 'news', 'cycles', 'calc', 'portfolio'];
   const SECTORS = ['all', 'Финансы', 'Энергетика', 'IT', 'Ритейл'];
   const COUPON_FREQ = { 30: 'ежемес.', 91: 'ежекв.', 182: 'полугод.', 365: 'ежегод.' };
   const NEWS_TAGS = { stocks: 'Акции', bonds: 'Облигации', macro: 'Макро' };
@@ -673,6 +673,7 @@
     const view = VIEWS.includes(rawView) ? rawView : 'stocks';
     setView(view);
     if (view === 'stocks' && param && state.stocks.length && param.toUpperCase() !== state.chartTicker) loadChart(param);
+    if (view === 'calc') FP.Calculators.render(param);
   }
 
   /* =====================================================================
@@ -818,6 +819,7 @@
     const ui = { starBtn, instrument, qPrice, qPct, ratingTag, couponFreq: COUPON_FREQ, selected: () => state.selected };
     FP.Screener.initStocks($('#stock-screener'), ui);
     FP.Screener.initBonds($('#bond-screener'), ui);
+    FP.Calculators.init($('#calc-root'), { getBonds: () => state.bonds });
 
     bindEvents();
     initSearch();

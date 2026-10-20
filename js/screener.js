@@ -119,14 +119,16 @@ FP.Screener = (() => {
         save(key, st); renderTable();
       }
     });
-    const onInput = U.debounce((e) => {
+    // Значение сохраняем сразу (иначе быстрый ввод в два поля теряет первое), таблицу перерисовываем с задержкой
+    const redraw = U.debounce(() => renderTable(true), 150);
+    const onInput = (e) => {
       const el = e.target;
       if (el.dataset.num) st[el.dataset.num] = el.value;
       else if (el.dataset.q != null) st.q = el.value;
       else if (el.dataset.check) st[el.dataset.check] = el.checked;
       else return;
-      st.limit = PAGE; save(key, st); renderTable(true);
-    }, 150);
+      st.limit = PAGE; save(key, st); redraw();
+    };
     root.addEventListener('input', onInput);
     root.addEventListener('change', (e) => { if (e.target.dataset.check) onInput(e); });
   }

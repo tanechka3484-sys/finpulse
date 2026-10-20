@@ -241,6 +241,16 @@ FP.DemoSource = (() => {
     },
     sparkline: (ticker, n = 30) => history(ticker).daily.slice(-n).map((b) => b.close),
 
+    /** Демо-курсы валют (рублей за 1 единицу). */
+    async getRates() {
+      await wait();
+      const list = [['USD', 81.46, 'Доллар США'], ['EUR', 94.72, 'Евро'], ['CNY', 11.38, 'Китайский юань'], ['GBP', 108.6, 'Фунт стерлингов'],
+        ['JPY', 0.54, 'Японская иена'], ['CHF', 101.3, 'Швейцарский франк'], ['TRY', 1.95, 'Турецкая лира'], ['KZT', 0.158, 'Казахстанский тенге'],
+        ['AED', 22.18, 'Дирхам ОАЭ'], ['BYN', 25.1, 'Белорусский рубль'], ['INR', 0.93, 'Индийская рупия'], ['AMD', 0.21, 'Армянский драм']];
+      return Object.assign({ RUB: { rate: 1, name: 'Российский рубль' }, _source: 'Демо-курсы', _date: '' },
+        Object.fromEntries(list.map(([c, rate, name]) => [c, { rate, name }])));
+    },
+
     /** Универсум скринера: в демо — те же 13 бумаг. */
     async getUniverse() {
       await wait();

@@ -441,6 +441,14 @@ FP.LiveSource = (() => {
 
     getNews: fetchNews,
 
+    /** Официальные курсы ЦБ РФ ко всем валютам (за 1 единицу, в рублях). */
+    async getRates() {
+      const j = await getJSON('https://www.cbr-xml-daily.ru/daily_json.js');
+      const out = { RUB: { rate: 1, name: 'Российский рубль' }, _source: 'Банк России', _date: U.date(String(j.Date).slice(0, 10)) };
+      Object.values(j.Valute).forEach((c) => { out[c.CharCode] = { rate: c.Value / c.Nominal, name: c.Name }; });
+      return out;
+    },
+
     quote: (t) => byTicker.get(t),
 
     async getHistory(t, interval = '1Y') {
