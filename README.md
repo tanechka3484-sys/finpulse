@@ -4,13 +4,6 @@
 портфель/избранное и интерактивный график в стиле TradingView. Тёмная тема по
 умолчанию (есть переключатель на светлую), адаптивная вёрстка (desktop / tablet / mobile).
 
-## Сайт
-
-Публикуется на GitHub Pages: **https://tanechka3484-sys.github.io/finpulse/**
-
-Каждый push в ветку `main` автоматически публикует новую версию
-(workflow `.github/workflows/pages.yml`, вкладка **Actions** в репозитории).
-
 ## Деплой на Railway
 
 Репозиторий готов к Railway: сайт собирается в Docker-образ с веб-сервером Caddy
@@ -56,8 +49,6 @@ Lucide Icons, шрифты Inter / JetBrains Mono.
 ```
 .
 ├── index.html          # разметка всех разделов
-├── .nojekyll           # отдавать файлы как есть, без обработки Jekyll
-├── .github/workflows/pages.yml  # публикация на GitHub Pages
 ├── Dockerfile          # образ для Railway / любого Docker-хостинга
 ├── Caddyfile           # настройки веб-сервера (порт, сжатие, заголовки, /healthz)
 ├── railway.json        # сборка и проверка работоспособности на Railway
