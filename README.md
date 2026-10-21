@@ -4,13 +4,19 @@
 портфель/избранное и интерактивный график в стиле TradingView. Тёмная тема по
 умолчанию (есть переключатель на светлую), адаптивная вёрстка (desktop / tablet / mobile).
 
-## Запуск
+## Сайт
 
-Сборка не нужна — достаточно открыть `web/index.html` в браузере.
+Публикуется на GitHub Pages: **https://tanechka3484-sys.github.io/finpulse/**
+
+Каждый push в ветку `main` автоматически публикует новую версию
+(workflow `.github/workflows/pages.yml`, вкладка **Actions** в репозитории).
+
+## Запуск локально
+
+Сборка не нужна — достаточно открыть `index.html` в браузере.
 Или поднять статический сервер:
 
 ```bash
-cd web
 python -m http.server 8080
 # http://localhost:8080
 ```
@@ -21,8 +27,10 @@ Lucide Icons, шрифты Inter / JetBrains Mono.
 ## Структура
 
 ```
-web/
+.
 ├── index.html          # разметка всех разделов
+├── .nojekyll           # отдавать файлы как есть, без обработки Jekyll
+├── .github/workflows/pages.yml  # публикация на GitHub Pages
 ├── css/styles.css      # дизайн-токены (CSS-переменные), компоненты, анимации, скелетоны
 └── js/
     ├── utils.js        # форматирование чисел/дат (ru-RU), seeded RNG, localStorage, спарклайны
