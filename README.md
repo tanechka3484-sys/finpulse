@@ -11,6 +11,33 @@
 Каждый push в ветку `main` автоматически публикует новую версию
 (workflow `.github/workflows/pages.yml`, вкладка **Actions** в репозитории).
 
+## Деплой на Railway
+
+Репозиторий готов к Railway: сайт собирается в Docker-образ с веб-сервером Caddy
+(`Dockerfile`, `Caddyfile`), настройки деплоя лежат в `railway.json`.
+
+1. [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → выбрать `finpulse`.
+   Railway сам найдёт `railway.json` и соберёт `Dockerfile` — ничего настраивать не нужно.
+2. В сервисе: **Settings → Networking → Generate Domain** — появится публичный адрес вида `….up.railway.app`.
+3. Дальше каждый push в `main` автоматически пересобирает и перезапускает сайт.
+
+Что настроено:
+
+- порт берётся из переменной `PORT`, которую задаёт Railway;
+- проверка работоспособности — `GET /healthz` (ответ `ok`), перезапуск при падении;
+- сжатие gzip/zstd, заголовки безопасности, `Cache-Control: no-cache` + ETag — новая версия видна сразу после деплоя;
+- в образ попадают только `index.html`, `css/` и `js/` — служебные файлы снаружи недоступны.
+
+Переменные окружения не нужны: все данные сайт загружает в браузере из открытых API.
+
+Проверить образ локально:
+
+```bash
+docker build -t finpulse .
+docker run --rm -p 8080:8080 finpulse
+# http://localhost:8080
+```
+
 ## Запуск локально
 
 Сборка не нужна — достаточно открыть `index.html` в браузере.
@@ -31,6 +58,9 @@ Lucide Icons, шрифты Inter / JetBrains Mono.
 ├── index.html          # разметка всех разделов
 ├── .nojekyll           # отдавать файлы как есть, без обработки Jekyll
 ├── .github/workflows/pages.yml  # публикация на GitHub Pages
+├── Dockerfile          # образ для Railway / любого Docker-хостинга
+├── Caddyfile           # настройки веб-сервера (порт, сжатие, заголовки, /healthz)
+├── railway.json        # сборка и проверка работоспособности на Railway
 ├── css/styles.css      # дизайн-токены (CSS-переменные), компоненты, анимации, скелетоны
 └── js/
     ├── utils.js        # форматирование чисел/дат (ru-RU), seeded RNG, localStorage, спарклайны

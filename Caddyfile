@@ -1,0 +1,31 @@
+# Веб-сервер для Railway (и любого Docker-хостинга).
+# Railway передаёт порт в переменной PORT; локально по умолчанию 8080.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT:8080} {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		-Server
+		# В именах файлов нет хешей версии, поэтому браузер сверяет файл с сервером (ETag)
+		# при каждом открытии — новая версия сайта видна сразу после деплоя
+		Cache-Control "no-cache"
+	}
+
+	# Проверка работоспособности для Railway (healthcheckPath в railway.json)
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		file_server
+	}
+}
