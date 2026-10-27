@@ -251,6 +251,9 @@ FP.DemoSource = (() => {
         Object.fromEntries(list.map(([c, rate, name]) => [c, { rate, name }])));
     },
 
+    /** В демо все дивиденды уже загружены. */
+    async getMoreDividends() { return []; },
+
     /** Универсум скринера: в демо — те же 13 бумаг. */
     async getUniverse() {
       await wait();

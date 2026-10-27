@@ -116,6 +116,21 @@ FP.LiveSource = (() => {
     return out.map((r) => ({ time: tsLabel(r.begin), open: +r.open, high: +r.high, low: +r.low, close: +r.close, volume: +r.volume }));
   }
 
+  const divLoaded = new Set();   // по каким бумагам дивиденды уже загружены
+
+  /** Дивидендная доходность за 12 месяцев по выплатам в рублях. */
+  function applyDivYield(s, list) {
+    if (!s) return;
+    const yearAgo = U.daysFromToday(-365), today = U.isoDate(new Date());
+    const paid = list.filter((d) => d.currency === 'RUB' && d.exDate > yearAgo && d.exDate <= today);
+    s.divYield = s.price ? paid.reduce((a, d) => a + d.amount, 0) / s.price * 100 : 0;
+  }
+
+  /** Дивиденды → формат календаря (статус: объявлено / выплачено). */
+  const toCalendar = (list) => list
+    .filter((d) => d.exDate >= daysAgo(400))
+    .map((d) => ({ id: `${d.ticker}-${d.exDate}-${d.amount}`, ...d, period: '', status: U.daysUntil(d.exDate) >= 0 ? 'declared' : 'paid' }));
+
   async function fetchDividends(t) {
     const j = await iss(`securities/${t}/dividends`);
     return table(j.dividends).map((r) => ({ ticker: t, amount: +r.value, currency: r.currencyid, exDate: String(r.registryclosedate).slice(0, 10) }));
@@ -282,15 +297,14 @@ FP.LiveSource = (() => {
   async function loadStocks() {
     // Дневные свечи за ~13 мес. (спарклайны, 52-нед. диапазон, 1M/1Y) и дивиденды (доходность) по всем бумагам
     const from = daysAgo(400);
-    const yearAgo = U.daysFromToday(-365), today = U.isoDate(new Date());
     const [, divs] = await Promise.all([
       Promise.allSettled(TICKERS.map(async (t) => { hist.get(t).daily = await candles(t, 24, from); })),
       Promise.allSettled(TICKERS.map(fetchDividends)),
     ]);
     dividends = divs.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+    TICKERS.forEach((t) => divLoaded.add(t));
     for (const s of stocks) {
-      const paid = dividends.filter((d) => d.ticker === s.ticker && d.currency === 'RUB' && d.exDate > yearAgo && d.exDate <= today);
-      s.divYield = s.price ? paid.reduce((a, d) => a + d.amount, 0) / s.price * 100 : 0;
+      applyDivYield(s, dividends.filter((d) => d.ticker === s.ticker));
       const d = hist.get(s.ticker).daily;
       s.avgVolume = d.length ? d.slice(-20).reduce((a, b) => a + b.volume, 0) / Math.min(20, d.length) : s.volume;
     }
@@ -433,10 +447,30 @@ FP.LiveSource = (() => {
 
     async getDividends() {
       await (stocksLoad ||= loadStocks());
-      const since = daysAgo(400);
-      return dividends
-        .filter((d) => d.exDate >= since)
-        .map((d, i) => ({ id: 'd' + i, ...d, period: '', status: U.daysUntil(d.exDate) >= 0 ? 'declared' : 'paid' }));
+      return toCalendar(dividends);
+    },
+
+    /**
+     * Догрузить дивиденды по дополнительным бумагам (до 6 запросов параллельно).
+     * Возвращает только новые события; заодно считает дивидендную доходность для скринера.
+     */
+    async getMoreDividends(tickers) {
+      const queue = tickers.filter((t) => !divLoaded.has(t));
+      const found = [];
+      const worker = async () => {
+        while (queue.length) {
+          const t = queue.shift();
+          try {
+            const list = await fetchDividends(t);
+            divLoaded.add(t);
+            applyDivYield(byTicker.get(t), list);
+            found.push(...list);
+          } catch (e) { console.warn('[FinPulse] dividends', t, e); }
+        }
+      };
+      await Promise.all(Array.from({ length: 6 }, worker));
+      dividends.push(...found);
+      return toCalendar(found);
     },
 
     getNews: fetchNews,

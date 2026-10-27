@@ -372,7 +372,7 @@
      Раздел «Дивиденды»
      ===================================================================== */
   function enrichDividends() {
-    return state.dividends.filter((d) => { const s = API.quote(d.ticker); return s && s.price; }).map((d) => {
+    return state.dividends.concat(state.divExtra || []).filter((d) => { const s = API.quote(d.ticker); return s && s.price; }).map((d) => {
       const s = API.quote(d.ticker);
       return { ...d, stock: s, yield: d.amount / s.price * 100, days: U.daysUntil(d.exDate), buyBy: U.prevBusinessDay(d.exDate) };
     });
@@ -402,6 +402,13 @@
       : [...all].sort((a, b) => a.exDate.localeCompare(b.exDate));
     if (state.divStatus !== 'all') rows = rows.filter((d) => d.status === state.divStatus);
 
+    // Предстоящих выплат нет (MOEX вносит выплату только после решения собрания) — показываем последние
+    let notice = '';
+    if (state.divMode === 'upcoming' && !rows.length && all.length) {
+      rows = all.filter((d) => d.days < 0 && d.days >= -365).sort((a, b) => b.days - a.days);
+      notice = `<tr><td colspan="7" class="!text-left !whitespace-normal text-sm text-muted !py-3">Объявленных предстоящих выплат сейчас нет: Мосбиржа вносит дивиденд в базу после решения собрания акционеров. Ниже — выплаты за последние 12 месяцев.</td></tr>`;
+    }
+
     let month = '';
     const html = [];
     for (const d of rows) {
@@ -420,7 +427,7 @@
           <td class="hidden sm:table-cell">${DIV_STATUS[d.status] || ''}</td>
         </tr>`);
     }
-    $('#div-table tbody').innerHTML = html.join('') || emptyRow(7, 'Нет событий по выбранным фильтрам');
+    $('#div-table tbody').innerHTML = notice + html.join('') || emptyRow(7, 'Нет событий по выбранным фильтрам');
     U.icons();
   }
 
@@ -847,8 +854,18 @@
       loadChart(view === 'stocks' && param && has(param.toUpperCase()) ? param : state.selected);
       FP.Screener.setStocks(d); renderLeaders(); renderPortfolio();
       // Полный рынок для скринера догружается отдельно; пока показываем основные бумаги
-      API.getUniverse().then((all) => { if (all.length) FP.Screener.setStocks(all); })
-        .catch((e) => console.warn('[FinPulse] Универсум скринера недоступен:', e));
+      API.getUniverse().then((all) => {
+        if (!all.length) return;
+        FP.Screener.setStocks(all);
+        // Дивиденды по 100 крупнейшим российским бумагам — для календаря и доходности в скринере
+        const top = all.filter((s) => s.country === 'RU' && s.marketCap).sort((a, b) => b.marketCap - a.marketCap).slice(0, 100).map((s) => s.ticker);
+        return API.getMoreDividends(top).then((extra) => {
+          if (!extra.length) return;
+          state.divExtra = extra;
+          if (state.dividendsLoaded) renderDividends();
+          FP.Screener.refreshStocks();
+        });
+      }).catch((e) => console.warn('[FinPulse] Универсум скринера недоступен:', e));
     });
     const pNews = Promise.all([API.getNews(), pStocks]).then(([d]) => { state.news = d; state.newsLoaded = true; renderNews(); renderRelatedNews(); }).catch(failed('#news-grid', 'новости'));
     const pBonds = API.getBonds().then((d) => {
@@ -856,7 +873,7 @@
       state.bonds = d; renderBondSummary(); FP.Screener.setBonds(d); renderYieldCurve();
       if (state.view === 'cycles') renderCycles();
     }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
-    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));
+    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; state.dividendsLoaded = true; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));
 
     await Promise.all([pIndices, pStocks.catch(failed('#stocks-table tbody', 'котировки акций'))]);
     renderOverview();
