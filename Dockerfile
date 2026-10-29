@@ -3,6 +3,7 @@ FROM node:22-alpine
 
 WORKDIR /app
 COPY server.js ./
+COPY certs ./certs
 COPY index.html ./
 COPY css ./css
 COPY js ./js

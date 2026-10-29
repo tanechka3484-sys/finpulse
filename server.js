@@ -17,6 +17,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
+const https = require('node:https');
+const tls = require('node:tls');
 
 const PORT = Number(process.env.PORT) || 8080;
 const TOKEN = (process.env.T_INVEST_TOKEN || '').trim();
@@ -33,23 +35,61 @@ const API_HOSTS = process.env.T_INVEST_API_URL
 const SERVICE = 'tinkoff.public.invest.api.contract.v1.InstrumentsService/';
 let apiHost = API_HOSTS[0];
 
-/** Текст сетевой ошибки вместе с причиной (fetch прячет её в e.cause). */
+/** Текст сетевой ошибки вместе с кодом и причиной. */
 function errText(e) {
   const c = e && e.cause;
   const cause = c ? [c.code, c.message].filter(Boolean).join(' ') : '';
-  return [e && e.message, cause].filter(Boolean).join(': ');
+  return [e && e.code && !String(e.message).includes(e.code) ? e.code : '', e && e.message, cause].filter(Boolean).join(': ');
+}
+
+/*
+ * Сертификат API Т-Банка выдан российским удостоверяющим центром Минцифры
+ * («Russian Trusted Root CA»), которого нет в стандартном списке Node.js.
+ * Сертификаты из папки certs/ (PEM или DER) добавляются к стандартным
+ * ТОЛЬКО для запросов к T-Invest API — остальные соединения их не используют.
+ */
+const CA_DIR = process.env.T_INVEST_CA_DIR || path.join(__dirname, 'certs');
+const extraCa = [];
+try {
+  for (const f of fs.readdirSync(CA_DIR)) {
+    if (!/\.(pem|crt|cer)$/i.test(f)) continue;
+    const raw = fs.readFileSync(path.join(CA_DIR, f));
+    const text = raw.toString('latin1');
+    const blocks = text.includes('BEGIN CERTIFICATE') ? text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [] : [raw];
+    for (const b of blocks) {
+      try {
+        const cert = new crypto.X509Certificate(b);
+        extraCa.push(cert.toString());
+        console.log(`[t-invest] доверенный сертификат: ${cert.subject.replace(/\n/g, ', ')} (до ${cert.validTo})`);
+      } catch (e) { console.warn(`[t-invest] ${f}: не удалось прочитать сертификат — ${e.message}`); }
+    }
+  }
+} catch { /* папки certs нет — работаем со стандартным списком */ }
+const tinvestAgent = new https.Agent({ keepAlive: true, maxSockets: 4, ca: [...tls.rootCertificates, ...extraCa] });
+
+/** POST-запрос к T-Invest API через агента с российским корневым сертификатом. */
+function apiPost(url, body, headers = {}, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(body);
+    const req = https.request(url, {
+      method: 'POST', agent: tinvestAgent, timeout: timeoutMs,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Content-Length': data.length, ...headers },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })));
+    req.on('error', reject);
+    req.end(data);
+  });
 }
 const hostErrors = {};   // последняя сетевая ошибка по каждому адресу шлюза
 
 async function tinvest(method, body, attempt = 0) {
   let res;
   try {
-    res = await fetch(apiHost + SERVICE + method, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
+    res = await apiPost(apiHost + SERVICE + method, JSON.stringify(body), { Authorization: `Bearer ${TOKEN}` });
   } catch (e) {
     // Сетевая ошибка — запоминаем причину и пробуем запасной адрес шлюза
     hostErrors[new URL(apiHost).host] = errText(e);
@@ -58,13 +98,12 @@ async function tinvest(method, body, attempt = 0) {
     throw new Error('Нет соединения с T-Invest API — ' + Object.entries(hostErrors).map(([h, m]) => `${h}: ${m}`).join('; '));
   }
   if (res.status === 429 && attempt < 5) {           // лимит запросов — ждём и повторяем
-    const wait = Number(res.headers.get('x-ratelimit-reset')) || 5;
+    const wait = Number(res.headers['x-ratelimit-reset']) || 5;
     await sleep(wait * 1000);
     return tinvest(method, body, attempt + 1);
   }
-  const text = await res.text();
-  if (!res.ok) throw new Error(`T-Invest ${method}: HTTP ${res.status} ${text.slice(0, 200)}`);
-  return JSON.parse(text);
+  if (res.status < 200 || res.status >= 300) throw new Error(`T-Invest ${method}: HTTP ${res.status} ${res.text.slice(0, 200)}`);
+  return JSON.parse(res.text);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -195,17 +234,18 @@ async function refreshAll() {
  */
 async function diagnose() {
   const dns = require('node:dns').promises;
-  const out = { node: process.version, tokenSet: Boolean(TOKEN), hosts: [] };
+  const out = { node: process.version, tokenSet: Boolean(TOKEN), extraCertificates: extraCa.length, hosts: [] };
   for (const base of API_HOSTS) {
-    const host = new URL(base).host, r = { host };
-    try { r.dns = (await dns.lookup(host, { all: true })).map((a) => a.address); } catch (e) { r.dns = `ошибка: ${e.code || e.message}`; }
+    const { host, hostname } = new URL(base), r = { host };
+    try { r.dns = (await dns.lookup(hostname, { all: true })).map((a) => a.address); } catch (e) { r.dns = `ошибка: ${e.code || e.message}`; }
     try {
-      const res = await fetch(base + SERVICE + 'Shares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(15000) });
+      const res = await apiPost(base + SERVICE + 'Shares', '{}', {}, 15000);
       r.http = res.status;   // 401/403 без токена — нормально: соединение и сертификат в порядке
-      r.verdict = res.status === 401 || res.status === 403 || res.ok ? 'связь есть' : `ответ HTTP ${res.status}`;
+      r.verdict = res.status === 401 || res.status === 403 || (res.status >= 200 && res.status < 300) ? 'связь есть' : `ответ HTTP ${res.status}`;
     } catch (e) {
       r.error = errText(e);
-      r.verdict = /CERT|certificate|SELF_SIGNED|UNABLE_TO/i.test(r.error) ? 'сертификат не принят'
+      r.verdict = /CERT|certificate|SELF_SIGNED|UNABLE_TO/i.test(r.error)
+        ? (extraCa.length ? 'сертификат не принят (проверьте файл в certs/)' : 'сертификат не принят — нужен сертификат Минцифры в папке certs/')
         : /ENOTFOUND|EAI_AGAIN/.test(r.error) ? 'адрес не найден (DNS)'
         : /ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(r.error) ? 'соединение отклонено или не установлено (возможна блокировка зарубежных серверов)'
         : 'ошибка соединения';
