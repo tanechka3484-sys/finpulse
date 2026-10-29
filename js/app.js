@@ -162,14 +162,18 @@
 
   function renderMetrics() {
     const s = API.quote(state.selected);
+    const fr = FP.FUNDAMENTALS.ratios(s.ticker, s.price);
+    const divYield = fr.live && fr.divYield != null ? fr.divYield : s.divYield;
     const r = API.yearRange(s.ticker);
     const pos = Math.min(100, Math.max(0, (s.price - r.low) / (r.high - r.low) * 100));
     const cell = (label, value, sub) => `<div><div class="text-[11px] uppercase tracking-wide text-muted">${label}</div>
       <div class="mt-1 font-semibold num">${value}</div><div class="mt-1 text-xs text-muted num">${sub}</div></div>`;
     $('#chart-metrics').innerHTML = [
       cell('Объём', `<span data-q="${s.ticker}" data-f="volume">${U.compact(s.volume)}</span> шт.`, `оборот ${U.compact(turnover(s), '₽')}`),
-      cell('P/E', s.pe ? U.price(s.pe, 1) : '—', `EPS ${U.price(s.eps)} ₽${API.status().mode === 'live' ? ' (справочно)' : ''}`),
-      cell('Див. доходность', s.divYield ? `<span class="text-up">${U.pct(s.divYield, false)}</span>` : '—', s.divYield ? 'за 12 мес.' : 'не выплачивает'),
+      fr.live
+        ? cell('P/E', fr.pe ? U.price(fr.pe, 1) : '—', `P/B ${fr.pb ? U.price(fr.pb, 2) : '—'} · ROE ${fr.roe != null ? U.pct(fr.roe, false) : '—'}`)
+        : cell('P/E', s.pe ? U.price(s.pe, 1) : '—', `EPS ${U.price(s.eps)} ₽${API.status().mode === 'live' ? ' (справочно)' : ''}`),
+      cell('Див. доходность', divYield ? `<span class="text-up">${U.pct(divYield, false)}</span>` : '—', divYield ? 'за 12 мес.' : 'не выплачивает'),
       cell('Капитализация', U.compact(s.marketCap, '₽'), `β ${U.price(s.beta)} · лот ${s.lot}`),
       cell('52-нед. диапазон', `${U.price(r.low)} – ${U.price(r.high)}`, `<div class="range-bar mt-2"><i style="left:${pos}%"></i></div>`),
       cell('Диапазон дня', `${U.price(s.dayLow)} – ${U.price(s.dayHigh)}`, `откр. ${U.price(s.open)}`),
@@ -372,9 +376,10 @@
      Раздел «Дивиденды»
      ===================================================================== */
   function enrichDividends() {
-    return state.dividends.concat(state.divExtra || []).filter((d) => { const s = API.quote(d.ticker); return s && s.price; }).map((d) => {
+    const list = state.divSource === 'tinvest' ? state.dividends : state.dividends.concat(state.divExtra || []);
+    return list.filter((d) => { const s = API.quote(d.ticker); return s && s.price; }).map((d) => {
       const s = API.quote(d.ticker);
-      return { ...d, stock: s, yield: d.amount / s.price * 100, days: U.daysUntil(d.exDate), buyBy: U.prevBusinessDay(d.exDate) };
+      return { ...d, stock: s, yield: d.amount / s.price * 100, days: U.daysUntil(d.exDate), buyBy: d.lastBuyDate || U.prevBusinessDay(d.exDate) };
     });
   }
 
@@ -392,7 +397,7 @@
       best ? statCard('Макс. доходность', `<span class="text-up">${U.pct(best.yield, false)}</span>`, `${best.ticker} · ${U.price(best.amount)} ₽ на акцию`, 'percent') : '',
       statCard('Отсечек за 30 дней', in30, `всего предстоящих: ${upcoming.length}`, 'calendar-range'),
       API.status().mode === 'live'
-        ? statCard('Выплат за 12 мес.', all.filter((d) => d.days < 0 && d.days >= -365).length, 'по данным MOEX', 'badge-check')
+        ? statCard('Выплат за 12 мес.', all.filter((d) => d.days < 0 && d.days >= -365).length, state.divSource === 'tinvest' ? 'по данным Т-Инвестиций' : 'по данным MOEX', 'badge-check')
         : statCard('Одобрено / рекоменд.', `<span class="text-up">${approved}</span> / <span class="text-warn">${upcoming.length - approved}</span>`, 'по предстоящим выплатам', 'badge-check'),
     ].join('');
 
@@ -406,7 +411,9 @@
     let notice = '';
     if (state.divMode === 'upcoming' && !rows.length && all.length) {
       rows = all.filter((d) => d.days < 0 && d.days >= -365).sort((a, b) => b.days - a.days);
-      notice = `<tr><td colspan="7" class="!text-left !whitespace-normal text-sm text-muted !py-3">Объявленных предстоящих выплат сейчас нет: Мосбиржа вносит дивиденд в базу после решения собрания акционеров. Ниже — выплаты за последние 12 месяцев.</td></tr>`;
+      notice = `<tr><td colspan="7" class="!text-left !whitespace-normal text-sm text-muted !py-3">${state.divSource === 'tinvest'
+        ? 'Объявленных предстоящих выплат сейчас нет.'
+        : 'Объявленных предстоящих выплат сейчас нет: Мосбиржа вносит дивиденд в базу после решения собрания акционеров.'} Ниже — выплаты за последние 12 месяцев.</td></tr>`;
     }
 
     let month = '';
@@ -644,6 +651,47 @@
   }
 
   /* =====================================================================
+     T-Invest API через сервер сайта (Railway): мультипликаторы и дивиденды.
+     Без сервера или токена ничего не меняется — остаются данные MOEX.
+     ===================================================================== */
+  const REGULARITY = { Annual: 'годовой', 'Semi-Anl': 'полугодовой', Quarterly: 'квартальный', Monthly: 'ежемесячный' };
+
+  async function loadTInvest() {
+    await pStocksReady;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const res = await FP.FUNDAMENTALS.loadLive();
+      if (res === 'off') break;
+      if (res === 'ok') {
+        FP.Screener.rerenderStocks();
+        if (state.chartTicker) renderMetrics();
+        renderDataSource();
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20000));   // сервер ещё загружает данные
+    }
+    for (let attempt = 0; attempt < 12; attempt++) {
+      try {
+        const r = await fetch('api/dividends', { cache: 'no-cache' });
+        if (r.ok) {
+          const j = await r.json();
+          state.dividends = (j.items || []).map((d) => ({
+            ...d, id: `${d.ticker}-${d.exDate}-${d.amount}`, period: REGULARITY[d.regularity] || '',
+            status: U.daysUntil(d.exDate) >= 0 ? 'declared' : 'paid',
+          }));
+          state.divSource = 'tinvest';
+          state.dividendsLoaded = true;
+          renderDividends();
+          return;
+        }
+        const j = await r.json().catch(() => ({}));
+        if (r.status !== 503 || j.error !== 'loading') return;
+      } catch { return; }
+      await new Promise((r) => setTimeout(r, 20000));
+    }
+  }
+  let pStocksReady;
+
+  /* =====================================================================
      Индикатор источника данных
      ===================================================================== */
   function renderDataSource() {
@@ -657,7 +705,7 @@
       : 'Живые источники недоступны в этом окружении — показаны сгенерированные данные';
     el.innerHTML = live ? `<span class="status-dot open"></span>MOEX · ${time}` : '<span class="status-dot evening"></span>Демо-данные';
     $('#footer-source').textContent = live
-      ? 'Данные: MOEX ISS (задержка ~15 мин), ЦБ РФ, CoinGecko, РБК. EPS и сектор — справочно. Оценка влияния новостей (*) — автоматическая.'
+      ? `Данные: MOEX ISS (задержка ~15 мин), ЦБ РФ, CoinGecko, РБК${FP.FUNDAMENTALS.live ? ', мультипликаторы и дивиденды — T-Invest API' : '. EPS и сектор — справочно'}. Оценка влияния новостей (*) — автоматическая.`
       : 'Демонстрационные данные: живые источники недоступны в этом окружении.';
     $('#div-status').hidden = live;
   }
@@ -860,20 +908,25 @@
         // Дивиденды по 100 крупнейшим российским бумагам — для календаря и доходности в скринере
         const top = all.filter((s) => s.country === 'RU' && s.marketCap).sort((a, b) => b.marketCap - a.marketCap).slice(0, 100).map((s) => s.ticker);
         return API.getMoreDividends(top).then((extra) => {
-          if (!extra.length) return;
+          if (!extra.length || state.divSource === 'tinvest') return;
           state.divExtra = extra;
           if (state.dividendsLoaded) renderDividends();
           FP.Screener.refreshStocks();
         });
       }).catch((e) => console.warn('[FinPulse] Универсум скринера недоступен:', e));
     });
+    pStocksReady = pStocks;
+    loadTInvest().catch((e) => console.warn('[FinPulse] T-Invest:', e));
     const pNews = Promise.all([API.getNews(), pStocks]).then(([d]) => { state.news = d; state.newsLoaded = true; renderNews(); renderRelatedNews(); }).catch(failed('#news-grid', 'новости'));
     const pBonds = API.getBonds().then((d) => {
       if (!d.length) throw new Error('пустой список облигаций');
       state.bonds = d; renderBondSummary(); FP.Screener.setBonds(d); renderYieldCurve();
       if (state.view === 'cycles') renderCycles();
     }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
-    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => { state.dividends = d; state.dividendsLoaded = true; renderDividends(); }).catch(failed('#div-table tbody', 'дивиденды'));
+    const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => {
+      if (state.divSource !== 'tinvest') state.dividends = d;
+      state.dividendsLoaded = true; renderDividends();
+    }).catch(failed('#div-table tbody', 'дивиденды'));
 
     await Promise.all([pIndices, pStocks.catch(failed('#stocks-table tbody', 'котировки акций'))]);
     renderOverview();

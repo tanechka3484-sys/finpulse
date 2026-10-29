@@ -144,7 +144,10 @@ FP.Screener = (() => {
   function stockRows() {
     return S.rows.map((s) => {
       const r = F.ratios(s.ticker, s.price);
-      return Object.assign(s, { pe: r.pe ?? s.pe ?? null, pb: r.pb, roe: r.roe, ndEbitda: r.ndEbitda, margin: r.margin, fundRef: r.ref, turnover: s.price * s.volume });
+      return Object.assign(s, {
+        pe: r.live ? r.pe : r.pe ?? s.pe ?? null, pb: r.pb, roe: r.roe, ndEbitda: r.ndEbitda, margin: r.margin, fundRef: r.ref,
+        divYield: r.live && r.divYield != null ? r.divYield : s.divYield, turnover: s.price * s.volume,
+      });
     });
   }
 
@@ -175,7 +178,9 @@ FP.Screener = (() => {
       ${group('Отрасль', chips('sectors', countBy(all, (s) => s.sector).map(([c, k]) => [c, c, k]), st.sectors))}
       ${group('Капитализация', seg('cap', CAP, st.cap))}
       <div class="scr-group">
-        <div class="scr-label">Фундаментальные показатели <span class="tag tag-warn ml-1" title="${F.asOf}. Сверяйтесь с отчётностью компании.">≈ справочно</span></div>
+        <div class="scr-label">Фундаментальные показатели ${F.live
+          ? `<span class="tag tag-up ml-1" title="${F.source()}">Т-Инвестиции</span>`
+          : `<span class="tag tag-warn ml-1" title="${F.asOf}. Сверяйтесь с отчётностью компании.">≈ справочно</span>`}</div>
         <div class="scr-nums">
           ${numInput('scr-pe', 'peMax', 'P/E не выше', st.peMax)}
           ${numInput('scr-pb', 'pbMax', 'P/B не выше', st.pbMax)}
@@ -184,7 +189,7 @@ FP.Screener = (() => {
           ${numInput('scr-div', 'divMin', 'Див. доходность от', st.divMin, '%', '0.5')}
           ${numInput('scr-r1y', 'r1yMin', 'Рост за год от', st.r1yMin, '%', '1')}
         </div>
-        <p class="text-[11px] text-muted mt-2">Мультипликаторы есть для ${withFund} из ${all.length} бумаг (${F.asOf}). Пока задан фильтр по ним, бумаги без данных скрыты.</p>
+        <p class="text-[11px] text-muted mt-2">Мультипликаторы есть для ${withFund} из ${all.length} бумаг (${F.source()}). Пока задан фильтр по ним, бумаги без данных скрыты.</p>
       </div>`;
     renderStockTable();
   }
@@ -203,8 +208,8 @@ FP.Screener = (() => {
     table.querySelector('thead').innerHTML = thead([
       ['', '', 'w-8'], ['ticker', 'Инструмент', 'text-left'], ['country', 'Страна', 'text-left hidden lg:table-cell'], ['sector', 'Отрасль', 'text-left hidden md:table-cell'],
       ['price', 'Цена'], ['changePct', 'Изм.'], ['r1y', '1 год', 'hidden sm:table-cell', 'Доходность за 12 месяцев'], ['marketCap', 'Капит.', 'hidden md:table-cell'],
-      ['pe', 'P/E', '', '≈ справочно'], ['pb', 'P/B', 'hidden sm:table-cell', '≈ справочно'], ['roe', 'ROE', 'hidden lg:table-cell', '≈ справочно'],
-      ['ndEbitda', 'Долг/EBITDA', 'hidden xl:table-cell', '≈ справочно'], ['divYield', 'Див.', 'hidden md:table-cell', 'Дивидендная доходность за 12 месяцев'],
+      ['pe', 'P/E', '', F.source()], ['pb', 'P/B', 'hidden sm:table-cell', F.source()], ['roe', 'ROE', 'hidden lg:table-cell', F.source()],
+      ['ndEbitda', 'Долг/EBITDA', 'hidden xl:table-cell', F.source()], ['divYield', 'Див.', 'hidden md:table-cell', 'Дивидендная доходность за 12 месяцев'],
     ], st.sort);
     table.querySelector('tbody').innerHTML = rows.slice(0, st.limit).map((s) => `
       <tr class="clickable ${s.ticker === ui.selected() ? 'selected' : ''}" data-row="${s.ticker}">
@@ -329,6 +334,8 @@ FP.Screener = (() => {
     /** Фильтр по отрасли из «Обзора рынка». */
     showSector(sector) { Object.assign(S.st, structuredClone(STOCK_DEFAULT), { sort: S.st.sort, sectors: [sector] }); save('scr:stocks', S.st); renderStocks(); },
     refreshStocks() { if (S.rows.length) renderStockTable(true); },
+    /** Полная перерисовка (панель + таблица) — например, когда пришли мультипликаторы. */
+    rerenderStocks() { renderStocks(); },
 
     initBonds(root, ui) {
       B.root = root; B.ui = ui;

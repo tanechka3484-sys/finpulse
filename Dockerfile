@@ -1,14 +1,16 @@
-# FinPulse — статический сайт на веб-сервере Caddy.
-# Сборка не нужна: в образ копируются только файлы сайта.
-FROM caddy:2.10-alpine
+# FinPulse — сайт и небольшой API-сервер на Node.js (без зависимостей).
+FROM node:22-alpine
 
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY index.html /srv/
-COPY css /srv/css
-COPY js /srv/js
+WORKDIR /app
+COPY server.js ./
+COPY index.html ./
+COPY css ./css
+COPY js ./js
 
+ENV NODE_ENV=production
 # Railway задаёт PORT сам; значение ниже — для локального запуска
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+USER node
+CMD ["node", "server.js"]

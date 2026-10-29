@@ -35,8 +35,42 @@ FP.FUNDAMENTALS = {
     OZON: { eps: -12, bvps: null, ndEbitda: null, margin: -5 },
   },
 
+  /** Данные T-Invest API с сервера сайта (/api/fundamentals): { TICKER: {pe, pb, roe, ...} }. */
+  live: null,
+  liveUpdatedAt: null,
+
+  /**
+   * Загрузить мультипликаторы всех акций из T-Invest API через сервер сайта.
+   * Возвращает 'ok', 'retry' (сервер ещё загружает данные) или 'off' (нет сервера или токена).
+   */
+  async loadLive() {
+    try {
+      const r = await fetch('api/fundamentals', { cache: 'no-cache' });
+      if (r.status === 503) { const j = await r.json().catch(() => ({})); return j.error === 'loading' ? 'retry' : 'off'; }
+      if (!r.ok) return 'off';
+      const j = await r.json();
+      if (!j.items || !Object.keys(j.items).length) return 'off';
+      this.live = j.items;
+      this.liveUpdatedAt = j.updatedAt;
+      return 'ok';
+    } catch { return 'off'; }
+  },
+
+  /** Подпись источника для интерфейса. */
+  source() {
+    return this.live
+      ? `T-Invest API, обновлено ${new Date(this.liveUpdatedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+      : this.asOf;
+  },
+
   /** Мультипликаторы для бумаги при текущей цене (или null-поля, если данных нет). */
   ratios(ticker, price) {
+    // Есть данные T-Invest — берём только их, без смешивания со справочником
+    if (this.live) {
+      const L = this.live[ticker];
+      if (!L) return { pe: null, pb: null, roe: null, ndEbitda: null, margin: null, divYield: null, ref: false, live: true };
+      return { pe: L.pe, pb: L.pb, roe: L.roe, ndEbitda: L.ndEbitda, margin: L.margin, evEbitda: L.evEbitda, divYield: L.divYield, ref: true, live: true };
+    }
     const f = this.DATA[ticker];
     if (!f) return { pe: null, pb: null, roe: null, ndEbitda: null, margin: null, ref: false };
     return {
