@@ -33,6 +33,14 @@ const API_HOSTS = process.env.T_INVEST_API_URL
 const SERVICE = 'tinkoff.public.invest.api.contract.v1.InstrumentsService/';
 let apiHost = API_HOSTS[0];
 
+/** Текст сетевой ошибки вместе с причиной (fetch прячет её в e.cause). */
+function errText(e) {
+  const c = e && e.cause;
+  const cause = c ? [c.code, c.message].filter(Boolean).join(' ') : '';
+  return [e && e.message, cause].filter(Boolean).join(': ');
+}
+const hostErrors = {};   // последняя сетевая ошибка по каждому адресу шлюза
+
 async function tinvest(method, body, attempt = 0) {
   let res;
   try {
@@ -43,10 +51,11 @@ async function tinvest(method, body, attempt = 0) {
       signal: AbortSignal.timeout(20000),
     });
   } catch (e) {
-    // Сетевая ошибка — пробуем запасной адрес шлюза
+    // Сетевая ошибка — запоминаем причину и пробуем запасной адрес шлюза
+    hostErrors[new URL(apiHost).host] = errText(e);
     const next = API_HOSTS[(API_HOSTS.indexOf(apiHost) + 1) % API_HOSTS.length];
     if (attempt < API_HOSTS.length - 1) { apiHost = next; return tinvest(method, body, attempt + 1); }
-    throw e;
+    throw new Error('Нет соединения с T-Invest API — ' + Object.entries(hostErrors).map(([h, m]) => `${h}: ${m}`).join('; '));
   }
   if (res.status === 429 && attempt < 5) {           // лимит запросов — ждём и повторяем
     const wait = Number(res.headers.get('x-ratelimit-reset')) || 5;
@@ -119,7 +128,7 @@ async function refreshFundamentals() {
     c.error = null;
     console.log(`[t-invest] fundamentals: ${rows.length} бумаг`);
   } catch (e) {
-    c.error = String(e.message || e);
+    c.error = errText(e);
     console.error('[t-invest] fundamentals error:', c.error);
   } finally { c.loading = false; }
 }
@@ -161,14 +170,49 @@ async function refreshDividends() {
     c.error = null;
     console.log(`[t-invest] dividends: ${items.length} событий по ${shares.length} бумагам`);
   } catch (e) {
-    c.error = String(e.message || e);
+    c.error = errText(e);
     console.error('[t-invest] dividends error:', c.error);
   } finally { c.loading = false; }
 }
 
+const RETRY_MS = 5 * 60e3;
+let retryTimer = null;
+
+/** Полное обновление; при ошибке — повтор через 5 минут, а не через 6 часов. */
 async function refreshAll() {
   await refreshFundamentals();
-  await refreshDividends();
+  if (!cache.fundamentals.error) await refreshDividends();
+  if ((cache.fundamentals.error || cache.dividends.error) && !retryTimer) {
+    retryTimer = setTimeout(() => { retryTimer = null; refreshAll(); }, RETRY_MS);
+    retryTimer.unref();
+    console.log('[t-invest] повтор через 5 минут');
+  }
+}
+
+/**
+ * Диагностика связи с T-Invest API без токена: DNS, TLS-сертификат, ответ сервера.
+ * Помогает понять, почему сервер на хостинге не может достучаться до API.
+ */
+async function diagnose() {
+  const dns = require('node:dns').promises;
+  const out = { node: process.version, tokenSet: Boolean(TOKEN), hosts: [] };
+  for (const base of API_HOSTS) {
+    const host = new URL(base).host, r = { host };
+    try { r.dns = (await dns.lookup(host, { all: true })).map((a) => a.address); } catch (e) { r.dns = `ошибка: ${e.code || e.message}`; }
+    try {
+      const res = await fetch(base + SERVICE + 'Shares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(15000) });
+      r.http = res.status;   // 401/403 без токена — нормально: соединение и сертификат в порядке
+      r.verdict = res.status === 401 || res.status === 403 || res.ok ? 'связь есть' : `ответ HTTP ${res.status}`;
+    } catch (e) {
+      r.error = errText(e);
+      r.verdict = /CERT|certificate|SELF_SIGNED|UNABLE_TO/i.test(r.error) ? 'сертификат не принят'
+        : /ENOTFOUND|EAI_AGAIN/.test(r.error) ? 'адрес не найден (DNS)'
+        : /ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(r.error) ? 'соединение отклонено или не установлено (возможна блокировка зарубежных серверов)'
+        : 'ошибка соединения';
+    }
+    out.hosts.push(r);
+  }
+  return out;
 }
 
 /* =====================================================================
@@ -225,6 +269,7 @@ const server = http.createServer((req, res) => {
         dividends: { count: cache.dividends.items ? cache.dividends.items.length : 0, updatedAt: cache.dividends.updatedAt, loading: cache.dividends.loading, error: cache.dividends.error },
       });
     }
+    if (route === '/api/diag') { diagnose().then((d) => json(req, res, 200, d), (e) => json(req, res, 500, { error: errText(e) })); return; }
     if (!TOKEN) return json(req, res, 503, { error: 'no_token', message: 'T_INVEST_TOKEN не задан' });
     const c = route === '/api/fundamentals' ? cache.fundamentals : route === '/api/dividends' ? cache.dividends : null;
     if (!c) return json(req, res, 404, { error: 'not_found' });
