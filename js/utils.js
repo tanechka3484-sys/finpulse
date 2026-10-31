@@ -110,6 +110,24 @@ FP.U = (() => {
   };
 
   /* ---------- Прочее ---------- */
+  /**
+   * Число из поля ввода: принимает и запятую, и точку (на русской клавиатуре телефона
+   * дробь набирается через запятую), пробелы-разделители тысяч игнорирует.
+   * Пустая строка или мусор → null.
+   */
+  const parseNum = (v) => {
+    if (v == null) return null;
+    const s = String(v).replace(/[\s\u00a0]/g, '').replace(',', '.');
+    if (s === '' || s === '-' || s === '.') return null;
+    const x = Number(s);
+    return Number.isFinite(x) ? x : null;
+  };
+  /** Оставить в поле только цифры, один разделитель и минус в начале. */
+  const cleanNumInput = (el) => {
+    const v = el.value, c = v.replace(/[^\d.,\-\s]/g, '').replace(/(?!^)-/g, '');
+    if (c !== v) el.value = c;
+  };
+
   const debounce = (fn, ms = 150) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
   /** localStorage может быть недоступен (приватный режим, file://) — не падаем. */
@@ -150,6 +168,6 @@ FP.U = (() => {
     $, $$, escape, highlight, hash, rng, gauss,
     price, signed, pct, int, compact, trend, arrow, plural,
     isoDate, parseISO, today, daysFromToday, daysUntil, date, monthTitle, prevBusinessDay, relTime,
-    debounce, store, sparkline, logo, logoColor, icons, flash,
+    debounce, parseNum, cleanNumInput, store, sparkline, logo, logoColor, icons, flash,
   };
 })();

@@ -44,6 +44,7 @@ FP.FUNDAMENTALS = {
    * Возвращает 'ok', 'retry' (сервер ещё загружает данные) или 'off' (нет сервера или токена).
    */
   async loadLive() {
+    if (location.protocol === 'file:') return 'off';   // сайт открыт файлом — сервера нет
     try {
       const r = await fetch('api/fundamentals', { cache: 'no-cache' });
       if (r.status === 503) { const j = await r.json().catch(() => ({})); return j.error === 'loading' ? 'retry' : 'off'; }

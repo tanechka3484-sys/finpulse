@@ -669,6 +669,7 @@
       }
       await new Promise((r) => setTimeout(r, 20000));   // сервер ещё загружает данные
     }
+    if (location.protocol === 'file:') return;
     for (let attempt = 0; attempt < 12; attempt++) {
       try {
         const r = await fetch('api/dividends', { cache: 'no-cache' });

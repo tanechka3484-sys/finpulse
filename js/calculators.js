@@ -513,7 +513,7 @@ FP.Calculators = (() => {
         <select id="${fid}" class="input w-full" data-field="${f.id}">${opts.map(([val, l]) => `<option value="${val}" ${String(v[f.id]) === val ? 'selected' : ''}>${U.escape(l)}</option>`).join('')}</select></label>`;
     }
     return `<label class="calc-field" for="${fid}"><span class="calc-label">${f.label}</span>
-      <span class="relative block"><input id="${fid}" class="input w-full num pr-16" type="number" inputmode="decimal" data-field="${f.id}" value="${v[f.id]}" step="${f.step || 1}" ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''}>
+      <span class="relative block"><input id="${fid}" class="input w-full num pr-16" type="text" inputmode="decimal" autocomplete="off" data-field="${f.id}" value="${String(v[f.id]).replace('.', ',')}">
       ${f.unit ? `<span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted pointer-events-none">${f.unit}</span>` : ''}</span></label>`;
   }
 
@@ -590,7 +590,12 @@ FP.Calculators = (() => {
   function onChange(field, raw) {
     const c = CALCS[current], v = valuesOf(current), f = c.fields.find((x) => x.id === field);
     if (!f) return;
-    v[field] = f.type ? raw : (raw === '' || Number.isNaN(+raw) ? 0 : +raw);
+    if (!f.type) {
+      let x = U.parseNum(raw) ?? 0;
+      if (f.min != null) x = Math.max(f.min, x);   // ограничения поля (например, срок не меньше года)
+      if (f.max != null) x = Math.min(f.max, x);
+      v[field] = x;
+    } else v[field] = raw;
     U.store.set('calc:' + current, v);
     if (!f.type) { renderLater(); return; }
     if (c.fields.some((x) => x.when)) rerenderFields();   // только переключатели меняют набор полей
@@ -600,7 +605,7 @@ FP.Calculators = (() => {
   function bind() {
     root.addEventListener('input', (e) => {
       const el = e.target;
-      if (el.matches('input[data-field]')) onChange(el.dataset.field, el.value);
+      if (el.matches('input[data-field]')) { U.cleanNumInput(el); onChange(el.dataset.field, el.value); }
     });
     root.addEventListener('change', (e) => {
       const el = e.target;

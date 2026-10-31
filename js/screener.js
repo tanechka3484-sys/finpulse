@@ -67,7 +67,7 @@ FP.Screener = (() => {
 
   const load = (k, def) => ({ ...def, ...U.store.get(k, {}), limit: PAGE });
   const save = (k, st) => { const { limit, ...rest } = st; U.store.set(k, rest); };
-  const n = (v) => (v === '' || v == null || Number.isNaN(+v) ? null : +v);
+  const n = (v) => U.parseNum(v);
 
   const sorter = ({ key, dir }) => (a, b) => {
     const x = a[key], y = b[key];
@@ -84,7 +84,7 @@ FP.Screener = (() => {
     `<button type="button" data-v="${v}" class="${String(value) === v ? 'active' : ''}">${l}</button>`).join('')}</div>`;
   const numInput = (id, field, label, value, unit = '', step = '0.1') => `
     <label class="scr-num" for="${id}"><span>${label}</span>
-      <span class="flex items-center gap-1"><input id="${id}" class="input input-num !w-20" type="number" step="${step}" inputmode="decimal" data-num="${field}" value="${U.escape(value)}" placeholder="—"><span class="text-muted text-xs w-6">${unit}</span></span>
+      <span class="flex items-center gap-1"><input id="${id}" class="input input-num !w-20" type="text" inputmode="decimal" autocomplete="off" data-num="${field}" value="${U.escape(value)}" placeholder="—"><span class="text-muted text-xs w-6">${unit}</span></span>
     </label>`;
   const group = (title, body) => `<div class="scr-group"><div class="scr-label">${title}</div><div class="flex flex-wrap gap-1.5 items-center">${body}</div></div>`;
   const countBy = (rows, fn) => { const m = new Map(); rows.forEach((r) => { const k = fn(r); m.set(k, (m.get(k) || 0) + 1); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
@@ -112,6 +112,8 @@ FP.Screener = (() => {
       if (e.target.closest('[data-reset]')) { Object.assign(st, structuredClone(defaults)); save(key, st); render(); return; }
       if (e.target.closest('[data-more]')) { st.limit += PAGE; renderTable(); return; }
       if (e.target.closest('[data-toggle-filters]')) { root.querySelector('.scr-panel').classList.toggle('open'); return; }
+      // На телефоне таблица далеко под фильтрами — кнопка прокручивает к результатам
+      if (e.target.closest('[data-show-results]')) { root.querySelector('.table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
       const th = e.target.closest('th[data-sort]');
       if (th) {
         const k = th.dataset.sort;
@@ -123,7 +125,7 @@ FP.Screener = (() => {
     const redraw = U.debounce(() => renderTable(true), 150);
     const onInput = (e) => {
       const el = e.target;
-      if (el.dataset.num) st[el.dataset.num] = el.value;
+      if (el.dataset.num) { U.cleanNumInput(el); st[el.dataset.num] = el.value; }
       else if (el.dataset.q != null) st.q = el.value;
       else if (el.dataset.check) st[el.dataset.check] = el.checked;
       else return;
@@ -190,7 +192,8 @@ FP.Screener = (() => {
           ${numInput('scr-r1y', 'r1yMin', 'Рост за год от', st.r1yMin, '%', '1')}
         </div>
         <p class="text-[11px] text-muted mt-2">Мультипликаторы есть для ${withFund} из ${all.length} бумаг (${F.source()}). Пока задан фильтр по ним, бумаги без данных скрыты.</p>
-      </div>`;
+      </div>
+      <button type="button" class="chip active md:hidden justify-self-start" data-show-results>Показать результаты</button>`;
     renderStockTable();
   }
 
@@ -228,6 +231,8 @@ FP.Screener = (() => {
         <td class="hidden md:table-cell ${s.divYield >= 10 ? 'text-up font-medium' : ''}">${s.divYield ? U.pct(s.divYield, false) : '<span class="text-muted">—</span>'}</td>
       </tr>`).join('') || `<tr><td colspan="13" class="!text-center !py-10 text-muted">Под фильтры ничего не подходит. Ослабьте условия или нажмите «Сбросить».</td></tr>`;
     $('[data-more]', root).hidden = rows.length <= st.limit;
+    const showBtn = $('[data-show-results]', root);
+    if (showBtn) showBtn.textContent = rows.length ? `Показать ${U.int(rows.length)} ${U.plural(rows.length, ['бумагу', 'бумаги', 'бумаг'])} ↓` : 'Ничего не найдено';
     $('[data-more]', root).textContent = `Показать ещё (${Math.min(PAGE, rows.length - st.limit)} из ${rows.length - st.limit})`;
     U.icons();
   }
@@ -283,7 +288,8 @@ FP.Screener = (() => {
           <input id="scrb-traded" type="checkbox" data-check="traded" ${st.traded ? 'checked' : ''} class="accent-[rgb(var(--c-accent))]"> Только с оборотом сегодня
         </label>
         <p class="text-[11px] text-muted mt-2">Отрасль определяется по названию эмитента. Рейтинг известен только для ОФЗ и нескольких эмитентов уровня AAA.</p>
-      </div>`;
+      </div>
+      <button type="button" class="chip active md:hidden justify-self-start" data-show-results>Показать результаты</button>`;
     renderBondTable();
   }
 
@@ -320,6 +326,8 @@ FP.Screener = (() => {
         <td>${ui.ratingTag(b.rating, b.ratingScore)}</td>
       </tr>`).join('') || `<tr><td colspan="9" class="!text-center !py-10 text-muted">Под фильтры ничего не подходит. Ослабьте условия или нажмите «Сбросить».</td></tr>`;
     $('[data-more]', root).hidden = rows.length <= st.limit;
+    const showBtn = $('[data-show-results]', root);
+    if (showBtn) showBtn.textContent = rows.length ? `Показать ${U.int(rows.length)} ${U.plural(rows.length, ['выпуск', 'выпуска', 'выпусков'])} ↓` : 'Ничего не найдено';
     $('[data-more]', root).textContent = `Показать ещё (${Math.min(PAGE, rows.length - st.limit)} из ${rows.length - st.limit})`;
   }
 
