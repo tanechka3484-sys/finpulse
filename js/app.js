@@ -392,20 +392,35 @@
     }
   }
 
+  /** Корпоративные выпуски «чистого» вида: рубли, фиксированный купон, без субординации, бессрочности и амортизации. */
+  const plainCorp = (x) => x.type === 'corp' && x.currency === 'RUB' && x.kind !== 'float' && x.kind !== 'linker'
+    && !(x.meta && (x.meta.subordinated || x.meta.perpetual || x.meta.amortization));
+
   function renderBondSummary() {
     const b = state.bonds;
     const avg = (list) => list.reduce((a, x) => a + x.ytm, 0) / list.length;
-    const ofz = b.filter((x) => x.type === 'ofz' && x.kind === 'fixed'), corpAll = b.filter((x) => x.type === 'corp' && x.currency === 'RUB');
-    const aaa = corpAll.filter((x) => x.rating === 'AAA');
-    const corpAAA = aaa.length ? aaa : corpAll;
-    const corpLabel = aaa.length ? 'Ср. YTM корп. AAA' : 'Ср. YTM корп.';
+    const median = (xs) => { const v = [...xs].sort((a, c) => a - c), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+    const ofz = b.filter((x) => x.type === 'ofz' && x.kind === 'fixed');
+    const corp = b.filter(plainCorp);
+    const aaa = corp.filter((x) => x.rating === 'AAA');
+    const group = aaa.length ? aaa : corp;
+    const tag = aaa.length ? 'AAA*' : '';
+
+    // Спред: каждый выпуск сравниваем с ОФЗ того же срока (±1,5 года), берём медиану разниц
+    const diffs = group.map((x) => {
+      const peers = ofz.filter((o) => Math.abs(o.yearsToMaturity - x.yearsToMaturity) <= 1.5);
+      return peers.length ? x.ytm - avg(peers) : null;
+    }).filter((d) => d != null);
+    const spread = diffs.length ? median(diffs) * 100 : null;
     const max = [...b].filter((x) => x.currency === 'RUB').sort((x, y) => y.ytm - x.ytm)[0] || b[0];
-    const spread = (avg(corpAAA) - avg(ofz)) * 100;
-    const spreadText = Number.isFinite(spread) ? `${U.int(spread)} б.п.` : '—';
+    const n = (k) => `${k} ${U.plural(k, ['выпуск', 'выпуска', 'выпусков'])}`;
+
     $('#bond-summary').innerHTML = [
-      statCard('Ср. YTM ОФЗ-ПД', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark', 'data-drill="ofz"', 'Показать выпуски →'),
-      statCard(corpLabel, U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2', `data-drill="${aaa.length ? 'aaa' : 'corp'}"`, 'Показать выпуски →'),
-      statCard(aaa.length ? 'Спред AAA к ОФЗ' : 'Спред корп. к ОФЗ', spreadText, 'премия за кредитный риск', 'move-vertical'),
+      statCard('Ср. YTM ОФЗ-ПД', U.pct(avg(ofz), false), n(ofz.length), 'landmark', 'data-drill="ofz" title="Средняя доходность государственных облигаций с постоянным купоном"', 'Показать выпуски →'),
+      statCard(`Ср. YTM корп.${tag ? ' ' + tag : ''}`, group.length ? U.pct(avg(group), false) : '—', `${n(group.length)}, фикс. купон`, 'building-2',
+        `data-drill="${aaa.length ? 'aaa' : 'corp'}" title="${aaa.length ? 'AAA* — оценка по названию эмитента, а не рейтинг агентства. ' : ''}Только рублёвые выпуски с фиксированным купоном, без флоатеров, субординированных, бессрочных и с амортизацией"`, 'Показать выпуски →'),
+      statCard(`Спред${tag ? ' ' + tag : ' корп.'} к ОФЗ`, spread != null ? `${spread >= 0 ? '' : '−'}${U.int(Math.abs(spread))} б.п.` : '—',
+        diffs.length ? `медиана по ${diffs.length} ${U.plural(diffs.length, ['выпуску', 'выпускам', 'выпускам'])}; сравнение с ОФЗ того же срока` : 'нет ОФЗ сопоставимого срока', 'move-vertical'),
       statCard('Макс. доходность', `<span class="text-warn">${U.pct(max.ytm, false)}</span>`, `${U.escape(max.name)} · ${max.rating}`, 'alert-triangle', `data-bond="${max.isin}"`, 'Открыть выпуск →'),
     ].join('');
     U.icons();
@@ -828,7 +843,7 @@
             b.meta = m; n++;
             if (m.floating && b.type === 'corp') b.kind = 'float';
           });
-          if (n) { FP.Screener.setBonds(state.bonds); renderYieldCurve(); }
+          if (n) { renderBondSummary(); FP.Screener.setBonds(state.bonds); renderYieldCurve(); }
           return;
         }
         const j = await r.json().catch(() => ({}));
@@ -895,8 +910,9 @@
       if (drill) {
         const sets = {
           ofz: { type: 'ofz', couponKind: 'fixed' },
-          aaa: { type: 'corp', rating: 'AAA', currencies: ['RUB'] },
-          corp: { type: 'corp', currencies: ['RUB'] },
+          // те же условия, что и у карточки: рубли, фиксированный купон, без суборд./бессрочных/амортизации
+          aaa: { type: 'corp', rating: 'AAA', currencies: ['RUB'], couponKind: 'fixed', plain: true },
+          corp: { type: 'corp', currencies: ['RUB'], couponKind: 'fixed', plain: true },
         };
         FP.Screener.showBonds(sets[drill.dataset.drill] || {});
         $('#bond-screener').scrollIntoView({ behavior: 'smooth', block: 'start' });
