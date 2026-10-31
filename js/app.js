@@ -60,12 +60,16 @@
       <div class="min-w-0 text-left"><div class="font-semibold leading-tight">${U.escape(s.ticker)}</div>
       <div class="text-xs text-muted truncate max-w-[180px]">${U.escape(sub)}</div></div>
     </div>`;
-  const statCard = (label, value, sub = '', icon = '') => `
-    <div class="card stat-card">
+  /** Карточка-показатель. attrs (например, data-drill="ofz") делает её кнопкой: по нажатию — подробности. */
+  const statCard = (label, value, sub = '', icon = '', attrs = '', action = 'Показать →') => {
+    const body = `
       <div class="flex items-center justify-between text-xs text-muted">${label}${icon ? `<i data-lucide="${icon}" class="w-4 h-4"></i>` : ''}</div>
       <div class="mt-2 text-xl font-semibold num">${value}</div>
-      <div class="mt-1 text-xs text-muted">${sub}</div>
-    </div>`;
+      <div class="mt-1 text-xs text-muted">${sub}</div>`;
+    return attrs
+      ? `<button type="button" class="card stat-card stat-link text-left w-full" ${attrs}>${body}<div class="mt-2 text-xs text-accent">${action}</div></button>`
+      : `<div class="card stat-card">${body}</div>`;
+  };
   const skeletonRows = (tbody, cols, n = 6) => {
     tbody.innerHTML = Array.from({ length: n }, () => `<tr>${Array.from({ length: cols }, (_, i) =>
       `<td><span class="skeleton h-4 ${i === 0 ? 'w-32' : 'w-14'}"></span></td>`).join('')}</tr>`).join('');
@@ -399,10 +403,10 @@
     const spread = (avg(corpAAA) - avg(ofz)) * 100;
     const spreadText = Number.isFinite(spread) ? `${U.int(spread)} б.п.` : '—';
     $('#bond-summary').innerHTML = [
-      statCard('Ср. YTM ОФЗ-ПД', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark'),
-      statCard(corpLabel, U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2'),
+      statCard('Ср. YTM ОФЗ-ПД', U.pct(avg(ofz), false), `${ofz.length} ${U.plural(ofz.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'landmark', 'data-drill="ofz"', 'Показать выпуски →'),
+      statCard(corpLabel, U.pct(avg(corpAAA), false), `${corpAAA.length} ${U.plural(corpAAA.length, ['выпуск', 'выпуска', 'выпусков'])}`, 'building-2', `data-drill="${aaa.length ? 'aaa' : 'corp'}"`, 'Показать выпуски →'),
       statCard(aaa.length ? 'Спред AAA к ОФЗ' : 'Спред корп. к ОФЗ', spreadText, 'премия за кредитный риск', 'move-vertical'),
-      statCard('Макс. доходность', `<span class="text-warn">${U.pct(max.ytm, false)}</span>`, `${U.escape(max.name)} · ${max.rating}`, 'alert-triangle'),
+      statCard('Макс. доходность', `<span class="text-warn">${U.pct(max.ytm, false)}</span>`, `${U.escape(max.name)} · ${max.rating}`, 'alert-triangle', `data-bond="${max.isin}"`, 'Открыть выпуск →'),
     ].join('');
     U.icons();
   }
@@ -886,6 +890,18 @@
       if (t.closest('input')) return;
 
       if (t.closest('[data-expand-issuer]')) { $('#issuer-text').classList.remove('line-clamp-6'); t.closest('[data-expand-issuer]').remove(); return; }
+      // Карточки сводки по облигациям: показать в скринере выпуски, из которых посчитано значение
+      const drill = t.closest('[data-drill]');
+      if (drill) {
+        const sets = {
+          ofz: { type: 'ofz', couponKind: 'fixed' },
+          aaa: { type: 'corp', rating: 'AAA', currencies: ['RUB'] },
+          corp: { type: 'corp', currencies: ['RUB'] },
+        };
+        FP.Screener.showBonds(sets[drill.dataset.drill] || {});
+        $('#bond-screener').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
       const closeEl = t.closest('[data-close]');
       if (closeEl) { closeModal(); return; }
 

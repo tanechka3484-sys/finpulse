@@ -354,6 +354,12 @@ FP.Screener = (() => {
       wire(root, B.st, 'scr:bonds', renderBonds, renderBondTable, BOND_PRESETS, BOND_DEFAULT);
       const q = $('[data-q]', root); q.value = B.st.q;
     },
+    /** Показать выпуски по набору фильтров (остальные фильтры сбрасываются). */
+    showBonds(set) {
+      Object.assign(B.st, structuredClone(BOND_DEFAULT), { sort: B.st.sort }, structuredClone(set));
+      save('scr:bonds', B.st);
+      renderBonds();
+    },
     setBonds(rows) { rows.forEach((b) => { b.sector = bondSector(b); }); B.rows = rows; renderBonds(); },
   };
 })();
