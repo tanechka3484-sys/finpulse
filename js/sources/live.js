@@ -284,6 +284,7 @@ FP.LiveSource = (() => {
       coupon: num(s.COUPONPERCENT) ?? 0, couponPeriod: num(s.COUPONPERIOD) ?? 0, maturity: s.MATDATE,
       duration: durDays ? durDays / 365.25 : null, rating, nominal: num(s.FACEVALUE) ?? 1000,
       ratingScore: { AAA: 10, 'AA+': 9 }[rating] ?? 0,
+      ratingEst: type !== 'ofz' && rating !== 'н/д',   // рейтинг угадан по названию эмитента, а не взят у агентства
       yearsToMaturity: Math.max(0, U.daysUntil(s.MATDATE) / 365.25),
       couponValue: num(s.COUPONVALUE) ?? 0, nextCoupon: s.NEXTCOUPON && !String(s.NEXTCOUPON).startsWith('0000') ? s.NEXTCOUPON : s.MATDATE,
       turnover: num(m.VALTODAY) ?? 0,

@@ -18,6 +18,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const https = require('node:https');
+const httpClient = require('node:http');
 const tls = require('node:tls');
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -71,8 +72,10 @@ const tinvestAgent = new https.Agent({ keepAlive: true, maxSockets: 4, ca: [...t
 function apiPost(url, body, headers = {}, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const data = Buffer.from(body);
-    const req = https.request(url, {
-      method: 'POST', agent: tinvestAgent, timeout: timeoutMs,
+    // http — только для локального тестового сервера (T_INVEST_API_URL=http://...)
+    const plain = url.startsWith('http:');
+    const req = (plain ? httpClient : https).request(url, {
+      method: 'POST', agent: plain ? undefined : tinvestAgent, timeout: timeoutMs,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Content-Length': data.length, ...headers },
     }, (res) => {
       const chunks = [];
@@ -133,7 +136,59 @@ const cache = {
   shares: null,
   fundamentals: { items: null, updatedAt: null, error: null, loading: false },
   dividends: { items: null, updatedAt: null, error: null, loading: false },
+  bonds: { items: null, updatedAt: null, error: null, loading: false },
+  issuers: new Map(),   // assetUid → { data, at } — описания эмитентов, по запросу
 };
+
+/** Дата из Timestamp; «нулевые» даты (1970 и раньше) — это «нет данных». */
+const realDay = (ts) => { const d = day(ts); return d && d > '1971' ? d : null; };
+const RISK = { RISK_LEVEL_LOW: 'low', RISK_LEVEL_MODERATE: 'moderate', RISK_LEVEL_HIGH: 'high' };
+
+/**
+ * Признаки всех облигаций одним запросом: флоатер, амортизация, субординированность,
+ * бессрочность, только для квалов, уровень риска по оценке Т-Инвестиций, дата размещения.
+ */
+async function refreshBonds() {
+  const c = cache.bonds;
+  if (c.loading) return;
+  c.loading = true;
+  try {
+    const j = await tinvest('Bonds', { instrumentStatus: 'INSTRUMENT_STATUS_ALL' });
+    const items = {};
+    for (const b of j.instruments || []) {
+      if (!b.isin) continue;
+      const risk = typeof b.riskLevel === 'number' ? ['', 'low', 'moderate', 'high'][b.riskLevel] || null : RISK[b.riskLevel] || null;
+      items[b.isin] = {
+        assetUid: b.assetUid || null, name: b.name || '', sector: b.sector || '', country: b.countryOfRiskName || '',
+        floating: Boolean(b.floatingCouponFlag), amortization: Boolean(b.amortizationFlag),
+        subordinated: Boolean(b.subordinatedFlag), perpetual: Boolean(b.perpetualFlag), qual: Boolean(b.forQualInvestorFlag),
+        risk, placement: realDay(b.placementDate), call: realDay(b.callDate), couponsPerYear: b.couponQuantityPerYear || null,
+      };
+    }
+    c.items = items;
+    c.updatedAt = new Date().toISOString();
+    c.error = null;
+    console.log(`[t-invest] bonds: ${Object.keys(items).length} выпусков`);
+  } catch (e) {
+    c.error = errText(e);
+    console.error('[t-invest] bonds error:', c.error);
+  } finally { c.loading = false; }
+}
+
+/** Описание эмитента (актив + бренд) — по запросу, кэш на сутки. */
+async function issuer(assetUid) {
+  const hit = cache.issuers.get(assetUid);
+  if (hit && Date.now() - hit.at < 24 * 3600e3) return hit.data;
+  const j = await tinvest('GetAssetBy', { id: assetUid });
+  const a = j.asset || {}, br = a.brand || {};
+  const data = {
+    name: a.name || br.name || '', description: a.description || '',
+    brand: { name: br.name || '', description: br.description || '', info: br.info || '', company: br.company || '', sector: br.sector || '', country: br.countryOfRiskName || '' },
+  };
+  if (cache.issuers.size > 2000) cache.issuers.clear();
+  cache.issuers.set(assetUid, { data, at: Date.now() });
+  return data;
+}
 
 async function refreshFundamentals() {
   const c = cache.fundamentals;
@@ -220,8 +275,8 @@ let retryTimer = null;
 /** Полное обновление; при ошибке — повтор через 5 минут, а не через 6 часов. */
 async function refreshAll() {
   await refreshFundamentals();
-  if (!cache.fundamentals.error) await refreshDividends();
-  if ((cache.fundamentals.error || cache.dividends.error) && !retryTimer) {
+  if (!cache.fundamentals.error) { await refreshBonds(); await refreshDividends(); }
+  if ((cache.fundamentals.error || cache.dividends.error || cache.bonds.error) && !retryTimer) {
     retryTimer = setTimeout(() => { retryTimer = null; refreshAll(); }, RETRY_MS);
     retryTimer.unref();
     console.log('[t-invest] повтор через 5 минут');
@@ -307,11 +362,18 @@ const server = http.createServer((req, res) => {
         tInvest: Boolean(TOKEN),
         fundamentals: { count: cache.fundamentals.items ? Object.keys(cache.fundamentals.items).length : 0, updatedAt: cache.fundamentals.updatedAt, error: cache.fundamentals.error },
         dividends: { count: cache.dividends.items ? cache.dividends.items.length : 0, updatedAt: cache.dividends.updatedAt, loading: cache.dividends.loading, error: cache.dividends.error },
+        bonds: { count: cache.bonds.items ? Object.keys(cache.bonds.items).length : 0, updatedAt: cache.bonds.updatedAt, error: cache.bonds.error },
       });
     }
     if (route === '/api/diag') { diagnose().then((d) => json(req, res, 200, d), (e) => json(req, res, 500, { error: errText(e) })); return; }
     if (!TOKEN) return json(req, res, 503, { error: 'no_token', message: 'T_INVEST_TOKEN не задан' });
-    const c = route === '/api/fundamentals' ? cache.fundamentals : route === '/api/dividends' ? cache.dividends : null;
+    if (route === '/api/issuer') {
+      const id = new URL(url, 'http://x').searchParams.get('asset') || '';
+      if (!/^[0-9a-f-]{20,40}$/i.test(id)) return json(req, res, 400, { error: 'bad_asset' });
+      issuer(id).then((d) => json(req, res, 200, { source: 'T-Invest API', ...d }), (e) => json(req, res, 502, { error: 'upstream', message: errText(e) }));
+      return;
+    }
+    const c = route === '/api/fundamentals' ? cache.fundamentals : route === '/api/dividends' ? cache.dividends : route === '/api/bonds-meta' ? cache.bonds : null;
     if (!c) return json(req, res, 404, { error: 'not_found' });
     if (!c.items) return json(req, res, 503, { error: c.loading || !c.error ? 'loading' : 'upstream', message: c.error || 'Данные загружаются' });
     return json(req, res, 200, apiPayload(c, { items: c.items }));

@@ -45,7 +45,7 @@ FP.DemoSource = (() => {
     ratingScore: RATING_SCORE[b.rating] ?? 0,
     yearsToMaturity: Math.max(0, U.daysUntil(b.maturity) / 365.25),
     couponValue: b.nominal * b.coupon / 100 * b.couponPeriod / 365,   // ₽ за один купон
-    currency: 'RUB', country: 'RU', kind: b.type === 'ofz' ? 'fixed' : 'corp',
+    currency: 'RUB', country: 'RU', kind: b.type === 'ofz' ? 'fixed' : 'corp', ratingEst: b.type !== 'ofz',
     turnover: Math.round(1e6 + (U.hash(b.isin) % 1e8)),
     nextCoupon: nextCouponDate(b.maturity, b.couponPeriod),
   }));

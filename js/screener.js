@@ -55,7 +55,7 @@ FP.Screener = (() => {
   };
   const BOND_PRESETS = {
     ofzLong: { label: 'Длинные ОФЗ', set: { type: 'ofz', yearsMin: 8 } },
-    reliable: { label: 'Надёжные корп.', set: { type: 'corp', rating: 'AAA' } },
+    reliable: { label: 'Надёжные корп.', set: { type: 'corp', rating: 'AAA', couponKind: 'fixed', plain: true } },
     monthly: { label: 'Ежемесячный купон', set: { freq: 30 } },
     high: { label: 'Высокая доходность', set: { ytmMin: 22 } },
     short: { label: 'Короткие до 2 лет', set: { yearsMax: 2 } },
@@ -63,7 +63,7 @@ FP.Screener = (() => {
   };
 
   const STOCK_DEFAULT = { q: '', countries: [], sectors: [], cap: 'all', peMax: '', pbMax: '', roeMin: '', ndMax: '', divMin: '', r1yMin: '', sort: { key: 'marketCap', dir: -1 }, limit: PAGE };
-  const BOND_DEFAULT = { q: '', type: 'all', currencies: [], sectors: [], countries: [], rating: 'all', ytmMin: '', ytmMax: '', yearsMin: '', yearsMax: '', couponMin: '', durMax: '', freq: 'all', traded: false, sort: { key: 'ytm', dir: -1 }, limit: PAGE };
+  const BOND_DEFAULT = { q: '', type: 'all', couponKind: 'all', plain: false, currencies: [], sectors: [], countries: [], rating: 'all', ytmMin: '', ytmMax: '', yearsMin: '', yearsMax: '', couponMin: '', durMax: '', freq: 'all', traded: false, sort: { key: 'ytm', dir: -1 }, limit: PAGE };
 
   const load = (k, def) => ({ ...def, ...U.store.get(k, {}), limit: PAGE });
   const save = (k, st) => { const { limit, ...rest } = st; U.store.set(k, rest); };
@@ -250,6 +250,8 @@ FP.Screener = (() => {
     return rows.filter((b) =>
       (!q || [b.name, b.isin, b.secid, b.issuer].some((x) => String(x || '').toLowerCase().includes(q)))
       && (st.type === 'all' || b.type === st.type)
+      && (st.couponKind === 'all' || (st.couponKind === 'float' ? b.kind === 'float' : b.kind !== 'float' && b.kind !== 'linker'))
+      && (!st.plain || !(b.meta && (b.meta.subordinated || b.meta.perpetual || b.meta.amortization)))
       && (!st.currencies.length || st.currencies.includes(b.currency))
       && (!st.sectors.length || st.sectors.includes(bondSector(b)))
       && (!st.countries.length || st.countries.includes(b.country))
@@ -270,6 +272,8 @@ FP.Screener = (() => {
     $('.scr-panel', root).innerHTML = `
       ${group('Готовые наборы', Object.entries(BOND_PRESETS).map(([k, p]) => `<button type="button" class="chip" data-preset="${k}">${p.label}</button>`).join(''))}
       ${group('Тип', seg('type', { all: 'Все', ofz: 'ОФЗ', corp: 'Корпоративные' }, st.type) + seg('rating', { all: 'Любой рейтинг', AAA: 'Только AAA' }, st.rating))}
+      ${group('Купон', seg('couponKind', { all: 'Любой', fixed: 'Фиксированный', float: 'Плавающий' }, st.couponKind)
+        + (all.some((b) => b.meta) ? `<label class="inline-flex items-center gap-2 text-xs text-muted cursor-pointer" for="scrb-plain"><input id="scrb-plain" type="checkbox" data-check="plain" ${st.plain ? 'checked' : ''} class="accent-[rgb(var(--c-accent))]"> Без субординированных, бессрочных и с амортизацией</label>` : ''))}
       ${group('Валюта', chips('currencies', countBy(all, (b) => b.currency).map(([c, k]) => [c, c, k]), st.currencies))}
       ${group('Отрасль эмитента', chips('sectors', countBy(all, bondSector).map(([c, k]) => [c, c, k]), st.sectors))}
       ${countries.length > 1 ? group('Страна', chips('countries', countries.map(([c, k]) => [c, `${c} · ${countryName(c)}`, k]), st.countries)) : ''}
@@ -287,7 +291,7 @@ FP.Screener = (() => {
         <label class="mt-2 inline-flex items-center gap-2 text-xs text-muted cursor-pointer" for="scrb-traded">
           <input id="scrb-traded" type="checkbox" data-check="traded" ${st.traded ? 'checked' : ''} class="accent-[rgb(var(--c-accent))]"> Только с оборотом сегодня
         </label>
-        <p class="text-[11px] text-muted mt-2">Отрасль определяется по названию эмитента. Рейтинг известен только для ОФЗ и нескольких эмитентов уровня AAA.</p>
+        <p class="text-[11px] text-muted mt-2">Отрасль определяется по названию эмитента. Рейтинг со звёздочкой (AAA*) — оценка по названию эмитента, а не рейтинг агентства. Признаки флоатера, субординированности и др. — из Т-Инвестиций.</p>
       </div>
       <button type="button" class="chip active md:hidden justify-self-start" data-show-results>Показать результаты</button>`;
     renderBondTable();
@@ -297,7 +301,7 @@ FP.Screener = (() => {
     const root = B.root, st = B.st, ui = B.ui;
     const rows = filterBonds(B.rows).sort(sorter(st.sort));
     $('[data-count]', root).textContent = `${rows.length} из ${B.rows.length}`;
-    const active = (st.type !== 'all') + st.currencies.length + st.sectors.length + st.countries.length + (st.rating !== 'all') + (st.freq !== 'all') + (st.traded ? 1 : 0)
+    const active = (st.type !== 'all') + (st.couponKind !== 'all') + (st.plain ? 1 : 0) + st.currencies.length + st.sectors.length + st.countries.length + (st.rating !== 'all') + (st.freq !== 'all') + (st.traded ? 1 : 0)
       + ['ytmMin', 'ytmMax', 'yearsMin', 'yearsMax', 'couponMin', 'durMax'].filter((k) => n(st[k]) != null).length + (st.q ? 1 : 0);
     $$('[data-active]', root).forEach((el) => { el.textContent = active ? `Фильтры · ${active}` : 'Фильтры'; });
     $('[data-reset]', root).hidden = !active;
@@ -312,7 +316,7 @@ FP.Screener = (() => {
         <td class="!text-left">
           <div class="flex items-center gap-2.5">
             <span class="ticker-logo" style="background:${b.type === 'ofz' ? 'rgb(var(--c-accent))' : U.logoColor(b.issuer)}">${b.type === 'ofz' ? 'ОФЗ' : U.escape(b.name.slice(0, 3))}</span>
-            <div class="min-w-0"><div class="font-semibold leading-tight">${U.highlight(b.name, q)}${b.currency !== 'RUB' ? ` <span class="tag tag-accent">${b.currency}</span>` : ''}${b.kind === 'float' ? ' <span class="tag tag-muted" title="Купон привязан к ставке">флоатер</span>' : b.kind === 'linker' ? ' <span class="tag tag-muted" title="Номинал индексируется на инфляцию">линкер</span>' : ''}</div>
+            <div class="min-w-0"><div class="font-semibold leading-tight">${U.highlight(b.name, q)}${b.currency !== 'RUB' ? ` <span class="tag tag-accent">${b.currency}</span>` : ''}${b.kind === 'float' ? ' <span class="tag tag-warn" title="Купон привязан к ставке">флоатер</span>' : b.kind === 'linker' ? ' <span class="tag tag-muted" title="Номинал индексируется на инфляцию">линкер</span>' : ''}${b.meta && b.meta.subordinated ? ' <span class="tag tag-down" title="Субординированный выпуск">суборд.</span>' : ''}${b.meta && b.meta.perpetual ? ' <span class="tag tag-down" title="Без даты погашения">бессрочн.</span>' : ''}${b.meta && b.meta.amortization ? ' <span class="tag tag-accent" title="Номинал гасится частями">аморт.</span>' : ''}</div>
             <div class="text-xs text-muted font-mono">${U.highlight(b.isin, q)}</div></div>
           </div>
         </td>
@@ -323,7 +327,7 @@ FP.Screener = (() => {
         <td class="hidden sm:table-cell">${b.couponPeriod ? `<span class="text-muted">${ui.couponFreq[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.` : '—'}</td>
         <td class="hidden md:table-cell">${b.duration ? U.price(b.duration) + ' г.' : '—'}</td>
         <td class="hidden md:table-cell"><div>${U.date(b.maturity)}</div><div class="text-xs text-muted">через ${U.price(b.yearsToMaturity, 1)} г.</div></td>
-        <td>${ui.ratingTag(b.rating, b.ratingScore)}</td>
+        <td>${ui.ratingTag(b.rating, b.ratingScore, b.ratingEst)}</td>
       </tr>`).join('') || `<tr><td colspan="9" class="!text-center !py-10 text-muted">Под фильтры ничего не подходит. Ослабьте условия или нажмите «Сбросить».</td></tr>`;
     $('[data-more]', root).hidden = rows.length <= st.limit;
     const showBtn = $('[data-show-results]', root);

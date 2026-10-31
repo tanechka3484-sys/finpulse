@@ -290,7 +290,73 @@
   /* =====================================================================
      Раздел «Облигации»
      ===================================================================== */
-  const ratingTag = (r, score) => `<span class="tag ${r === 'н/д' ? 'tag-muted' : score >= 9 ? 'tag-up' : score >= 5 ? 'tag-accent' : 'tag-warn'}" ${r === 'н/д' ? 'title="Рейтинг не указан в источнике"' : ''}>${r}</span>`;
+  /** est — рейтинг угадан по названию эмитента (не данные рейтингового агентства): помечаем звёздочкой. */
+  const ratingTag = (r, score, est) => `<span class="tag ${r === 'н/д' ? 'tag-muted' : score >= 9 ? 'tag-up' : score >= 5 ? 'tag-accent' : 'tag-warn'}" title="${r === 'н/д'
+    ? 'Рейтинг не указан в источнике' : est ? 'Оценка по названию эмитента, а не рейтинг агентства. Проверяйте рейтинг выпуска на сайтах АКРА, Эксперт РА, НКР, НРА' : 'Государственная облигация'}">${r}${est ? '*' : ''}</span>`;
+
+  /* ---------- Особенности выпуска (данные T-Invest API, если есть) ---------- */
+  const BOND_FLAGS = [
+    ['floating', 'Плавающий купон', 'warn', 'Купон пересчитывается вслед за ключевой ставкой или RUONIA'],
+    ['amortization', 'Амортизация', 'accent', 'Номинал возвращается частями до погашения'],
+    ['subordinated', 'Субординированная', 'down', 'При банкротстве погашается после обычных долгов'],
+    ['perpetual', 'Бессрочная', 'down', 'Нет даты погашения, эмитент может не гасить выпуск'],
+    ['qual', 'Только для квалов', 'muted', 'Купить могут только квалифицированные инвесторы'],
+  ];
+  /** Секторы T-Invest API → по-русски. */
+  const T_SECTORS = {
+    financial: 'Финансы', energy: 'Энергетика', utilities: 'Электроэнергетика', telecom: 'Телеком', it: 'IT',
+    consumer: 'Потребительский сектор', materials: 'Сырьё и материалы', industrials: 'Промышленность', real_estate: 'Недвижимость',
+    health_care: 'Здравоохранение', government: 'Государство', municipal: 'Регионы и муниципалитеты', other: 'Другое',
+    ecomaterials: 'Экоматериалы', green_energy: 'Зелёная энергетика', green_buildings: 'Зелёное строительство', electrocars: 'Электромобили',
+  };
+  const RISK_LABEL = { low: ['Низкий риск', 'up'], moderate: ['Средний риск', 'warn'], high: ['Высокий риск', 'down'] };
+
+  /** Почему у выпуска такой купон/доходность — разбор по фактам о выпуске. */
+  function couponReasons(b) {
+    const m = b.meta || {}, out = [];
+    const floating = m.floating || b.kind === 'float';
+    if (floating) out.push(`Купон <b>плавающий</b>: он привязан к ключевой ставке или RUONIA. Ставки сейчас высокие, поэтому и купон высокий; при снижении ставки ЦБ купон уменьшится. Доходность к погашению (YTM) для таких выпусков условна — её считают так, будто текущий купон сохранится до конца.`);
+    if (b.price > 101 && b.coupon > b.ytm + 0.5) out.push(`Облигация стоит <b>дороже номинала</b> (${U.price(b.price)}%): покупатель переплачивает, поэтому реальная доходность к погашению — ${U.pct(b.ytm, false)}, ниже купона ${U.pct(b.coupon, false)}.`);
+    if (!floating && m.placement && m.placement >= '2024-06-01' && b.coupon >= 17) out.push(`Выпуск размещён ${U.date(m.placement)} — в период высокой ключевой ставки (до 21% в конце 2024 года). Купон зафиксировали на уровне ставок того времени.`);
+    if (m.subordinated) out.push('Выпуск <b>субординированный</b>: при банкротстве эмитента такие долги возвращают в последнюю очередь. За этот риск инвесторам платят надбавку к купону.');
+    if (m.perpetual) out.push('Выпуск <b>бессрочный</b>: даты погашения нет, эмитент может не возвращать номинал. Это заметно рискованнее обычной облигации.');
+    if (m.amortization) out.push('Выпуск <b>с амортизацией</b>: номинал возвращается частями, купон начисляется на остаток долга.');
+    const ofz = state.bonds.filter((x) => x.type === 'ofz' && x.kind === 'fixed' && Math.abs(x.yearsToMaturity - b.yearsToMaturity) <= 1.5);
+    if (b.type === 'corp' && !floating && ofz.length && b.currency === 'RUB') {
+      const spread = b.ytm - ofz.reduce((a, x) => a + x.ytm, 0) / ofz.length;
+      if (spread > 4) out.push(`Доходность на <b>${U.price(spread, 1)} п.п. выше ОФЗ</b> того же срока — рынок закладывает заметный кредитный риск эмитента${b.rating !== 'н/д' ? ', несмотря на высокую метку рейтинга' : ''}.`);
+      else if (spread >= 0) out.push(`Доходность выше ОФЗ того же срока на ${U.price(spread, 1)} п.п. — обычная премия за риск корпоративного заёмщика.`);
+    }
+    if (m.risk === 'high') out.push('Т-Инвестиции относят выпуск к <b>высокому уровню риска</b>.');
+    if (b.ratingEst) out.push('Метка рейтинга на сайте (со звёздочкой) — оценка по названию эмитента, а не рейтинг конкретного выпуска. Проверьте рейтинг на сайтах агентств: АКРА, Эксперт РА, НКР, НРА.');
+    if (!b.meta && b.type === 'corp') out.push('Подробные признаки выпуска (флоатер, субординированность и др.) появятся, когда сервер загрузит данные Т-Инвестиций.');
+    return out;
+  }
+
+  /** Описание эмитента из T-Invest API (подгружается при открытии карточки). */
+  async function loadIssuer(b) {
+    const el = $('#bond-issuer');
+    if (!el) return;
+    const assetUid = b.meta && b.meta.assetUid;
+    if (!assetUid || location.protocol === 'file:') { el.innerHTML = '<p class="text-xs text-muted">Описание компании доступно, когда сайт работает на сервере с токеном Т-Инвестиций.</p>'; return; }
+    el.innerHTML = '<span class="skeleton h-16 w-full block"></span>';
+    try {
+      const r = await fetch(`api/issuer?asset=${encodeURIComponent(assetUid)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (!$('#bond-issuer') || $('#bond-issuer').dataset.isin !== b.isin) return;   // карточку уже закрыли/сменили
+      const text = d.brand.description || d.description || d.brand.info || '';
+      const meta = [d.brand.company || d.name, T_SECTORS[d.brand.sector] || d.brand.sector, d.brand.country].filter(Boolean).map((x) => U.escape(x)).join(' · ');
+      el.innerHTML = `
+        ${meta ? `<div class="text-sm font-medium">${meta}</div>` : ''}
+        ${text ? `<p class="mt-1.5 text-sm text-muted leading-relaxed whitespace-pre-line line-clamp-6" id="issuer-text">${U.escape(text)}</p>
+          ${text.length > 320 ? '<button type="button" class="mt-1 text-xs text-accent hover:underline" data-expand-issuer>Показать полностью</button>' : ''}`
+        : '<p class="text-xs text-muted">Т-Инвестиции не приводят описание этой компании.</p>'}
+        <p class="mt-2 text-[11px] text-muted">Источник: Т-Инвестиции.</p>`;
+    } catch (e) {
+      el.innerHTML = '<p class="text-xs text-muted">Не удалось загрузить описание компании.</p>';
+    }
+  }
 
   function renderBondSummary() {
     const b = state.bonds;
@@ -346,11 +412,19 @@
     const b = state.bonds.find((x) => x.isin === isin);
     if (!b) return;
     const toCoupon = U.daysUntil(b.nextCoupon);
+    const m = b.meta || {};
+    const features = [
+      ...BOND_FLAGS.filter(([k]) => m[k] || (k === 'floating' && b.kind === 'float')).map(([, label, tone, hint]) => `<span class="tag tag-${tone}" title="${hint}">${label}</span>`),
+      m.risk && RISK_LABEL[m.risk] ? `<span class="tag tag-${RISK_LABEL[m.risk][1]}" title="Оценка Т-Инвестиций">${RISK_LABEL[m.risk][0]}</span>` : '',
+      m.placement ? `<span class="tag tag-muted">Размещён ${U.date(m.placement)}</span>` : '',
+      m.call ? `<span class="tag tag-muted" title="Эмитент может погасить выпуск досрочно">Колл-опцион ${U.date(m.call)}</span>` : '',
+    ].join('');
+    const reasons = couponReasons(b);
     const item = (label, value) => `<div class="p-3 rounded-lg bg-bg/60 border border-line"><div class="text-[11px] text-muted uppercase tracking-wide">${label}</div><div class="mt-1 font-semibold num">${value}</div></div>`;
     $('#modal-body').innerHTML = `
       <div class="flex items-start justify-between gap-3">
         <div>
-          <div class="flex items-center gap-2"><h3 class="text-lg font-semibold">${U.escape(b.name)}</h3>${ratingTag(b.rating, b.ratingScore)}</div>
+          <div class="flex items-center gap-2"><h3 class="text-lg font-semibold">${U.escape(b.name)}</h3>${ratingTag(b.rating, b.ratingScore, b.ratingEst)}</div>
           <p class="text-xs text-muted mt-1">${U.escape(b.issuer)} · <span class="font-mono">${b.isin}</span> · ${b.type === 'ofz' ? 'Государственная' : 'Корпоративная'}</p>
         </div>
         <button class="icon-btn" data-close aria-label="Закрыть"><i data-lucide="x" class="w-4 h-4"></i></button>
@@ -366,9 +440,17 @@
         ${item('Дюрация', b.duration ? `${U.price(b.duration)} г.` : '—')}
         ${item('Номинал', `${U.int(b.nominal)} ₽`)}
       </div>
-      <p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.</p>`;
+      <p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.</p>
+      ${features ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Особенности выпуска</div><div class="mt-1.5 flex flex-wrap gap-1.5">${features}</div></div>` : ''}
+      ${reasons.length ? `<div class="mt-4 p-3 rounded-lg border border-warn/40 bg-warn/5">
+        <div class="text-sm font-semibold">Почему купон ${U.pct(b.coupon, false)}, а доходность ${U.pct(b.ytm, false)}</div>
+        <ul class="mt-1.5 space-y-1.5 text-sm text-muted list-disc pl-4">${reasons.map((x) => `<li>${x}</li>`).join('')}</ul>
+      </div>` : ''}
+      ${b.type === 'corp' ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Об эмитенте</div><div id="bond-issuer" data-isin="${b.isin}" class="mt-1.5"></div></div>` : ''}`;
     $('#modal').classList.remove('hidden');
+    $('#modal').scrollTop = 0;   // окно прокручивается — каждую карточку открываем с начала
     U.icons();
+    if (b.type === 'corp') loadIssuer(b);
   }
   const closeModal = () => $('#modal').classList.add('hidden');
 
@@ -692,6 +774,32 @@
   }
   let pStocksReady;
 
+  /** Признаки облигаций (флоатер, амортизация, риск...) с сервера — дополняют список выпусков. */
+  async function loadBondsMeta(pBonds) {
+    if (location.protocol === 'file:') return;
+    await pBonds;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      try {
+        const r = await fetch('api/bonds-meta', { cache: 'no-cache' });
+        if (r.ok) {
+          const { items } = await r.json();
+          let n = 0;
+          state.bonds.forEach((b) => {
+            const m = items[b.isin];
+            if (!m) return;
+            b.meta = m; n++;
+            if (m.floating && b.type === 'corp') b.kind = 'float';
+          });
+          if (n) { FP.Screener.setBonds(state.bonds); renderYieldCurve(); }
+          return;
+        }
+        const j = await r.json().catch(() => ({}));
+        if (r.status !== 503 || j.error !== 'loading') return;
+      } catch { return; }
+      await new Promise((res) => setTimeout(res, 20000));
+    }
+  }
+
   /* =====================================================================
      Индикатор источника данных
      ===================================================================== */
@@ -743,6 +851,7 @@
       if (fav) { e.stopPropagation(); toggleFav(fav.dataset.fav); return; }
       if (t.closest('input')) return;
 
+      if (t.closest('[data-expand-issuer]')) { $('#issuer-text').classList.remove('line-clamp-6'); t.closest('[data-expand-issuer]').remove(); return; }
       const closeEl = t.closest('[data-close]');
       if (closeEl) { closeModal(); return; }
 
@@ -924,6 +1033,7 @@
       state.bonds = d; renderBondSummary(); FP.Screener.setBonds(d); renderYieldCurve();
       if (state.view === 'cycles') renderCycles();
     }).catch((e) => { failed('#bonds-table tbody', 'облигации')(e); $('#bond-summary').innerHTML = ''; $('#yield-curve').innerHTML = ''; });
+    loadBondsMeta(pBonds).catch((e) => console.warn('[FinPulse] bonds meta:', e));
     const pDivs = Promise.all([API.getDividends(), pStocks]).then(([d]) => {
       if (state.divSource !== 'tinvest') state.dividends = d;
       state.dividendsLoaded = true; renderDividends();

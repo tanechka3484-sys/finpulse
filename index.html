@@ -352,9 +352,9 @@
   </footer>
 
   <!-- Модальное окно (детали облигации) -->
-  <div id="modal" class="fixed inset-0 z-50 hidden" aria-modal="true" role="dialog">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" data-close></div>
-    <div class="relative mx-auto mt-[10vh] w-[calc(100%-2rem)] max-w-lg card shadow-2xl modal-panel" id="modal-body"></div>
+  <div id="modal" class="fixed inset-0 z-50 hidden overflow-y-auto overscroll-contain" aria-modal="true" role="dialog">
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" data-close></div>
+    <div class="relative mx-auto my-[6vh] w-[calc(100%-2rem)] max-w-lg card shadow-2xl modal-panel" id="modal-body"></div>
   </div>
 
   <!-- Toast -->
