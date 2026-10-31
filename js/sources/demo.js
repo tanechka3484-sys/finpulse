@@ -251,6 +251,19 @@ FP.DemoSource = (() => {
         Object.fromEntries(list.map(([c, rate, name]) => [c, { rate, name }])));
     },
 
+    /** Демо-график купонов: равные купоны с шагом купонного периода. */
+    async getBondSchedule(secid) {
+      await wait();
+      const b = bonds.find((x) => x.secid === secid);
+      if (!b) return { coupons: [], amortizations: [] };
+      const coupons = [];
+      for (let k = -3; k <= 3; k++) {
+        const d = U.parseISO(b.nextCoupon); d.setDate(d.getDate() + k * b.couponPeriod);
+        coupons.push({ date: U.isoDate(d), value: b.couponValue, pct: b.coupon });
+      }
+      return { coupons, amortizations: [{ date: b.maturity, value: b.nominal, pct: 100 }] };
+    },
+
     /** В демо все дивиденды уже загружены. */
     async getMoreDividends() { return []; },
 

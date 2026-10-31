@@ -333,6 +333,36 @@
     return out;
   }
 
+  /** График купонов с Мосбиржи: последние выплаченные и ближайшие. Для флоатера — какие купоны платились на деле. */
+  async function loadSchedule(b) {
+    const el = $('#bond-schedule');
+    if (!el) return;
+    let sch;
+    try { sch = await API.getBondSchedule(b.secid || b.isin); } catch (e) { el.innerHTML = '<p class="text-xs text-muted">Не удалось загрузить график купонов.</p>'; return; }
+    if (!$('#bond-schedule') || $('#bond-schedule').dataset.isin !== b.isin) return;   // карточку закрыли или сменили
+    const today = U.isoDate(new Date());
+    const past = sch.coupons.filter((c) => c.date < today).slice(-4).reverse();
+    const next = sch.coupons.filter((c) => c.date >= today).slice(0, 4);
+    const lastKnown = [...sch.coupons].reverse().find((c) => c.date < today && c.pct);
+    // Ставка не объявлена — показываем последнюю известную в ячейке «Купон»
+    if (b.coupon == null && lastKnown) {
+      $('#bond-coupon-cell').innerHTML = `<span class="text-warn">≈${U.pct(lastKnown.pct, false)}</span><div class="text-xs text-muted font-normal">последний выплаченный (${U.date(lastKnown.date, { day: 'numeric', month: 'short' })}), плавающий</div>`;
+    }
+    const row = (c, future) => `<tr><td class="!text-left">${U.date(c.date)}</td><td>${c.pct ? U.pct(c.pct, false) : '<span class="text-muted">—</span>'}</td><td>${c.value ? `${U.price(c.value)} ₽` : `<span class="text-muted">${future ? 'не объявлен' : '—'}</span>`}</td></tr>`;
+    const amortCount = sch.amortizations.filter((a) => a.date >= today).length;
+    el.innerHTML = !past.length && !next.length ? '<p class="text-xs text-muted">Мосбиржа не приводит график купонов этого выпуска.</p>' : `
+      <div class="table-wrap rounded-lg border border-line"><table class="data-table">
+        <thead><tr><th class="text-left">Дата</th><th>Ставка</th><th>На облигацию</th></tr></thead>
+        <tbody>
+          ${next.length ? `<tr class="group-row"><td colspan="3">Ближайшие</td></tr>${next.map((c) => row(c, true)).join('')}` : ''}
+          ${past.length ? `<tr class="group-row"><td colspan="3">Выплаченные</td></tr>${past.map((c) => row(c, false)).join('')}` : ''}
+        </tbody>
+      </table></div>
+      ${next.some((c) => !c.value) ? '<p class="mt-1.5 text-xs text-muted">«Не объявлен» — размер купона станет известен незадолго до выплаты (у флоатеров он зависит от ставки на дату расчёта).</p>' : ''}
+      ${amortCount > 1 ? `<p class="mt-1.5 text-xs text-muted">Амортизация: номинал гасится частями, впереди ${amortCount} ${U.plural(amortCount, ['выплата', 'выплаты', 'выплат'])}.</p>` : ''}
+      <p class="mt-1.5 text-[11px] text-muted">Источник: Московская биржа.</p>`;
+  }
+
   /** Описание эмитента из T-Invest API (подгружается при открытии карточки). */
   async function loadIssuer(b) {
     const el = $('#bond-issuer');
@@ -432,7 +462,9 @@
       <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
         ${item('Цена', `${U.price(b.price)}% <span class="text-xs text-muted font-normal">(${U.price(b.nominal * b.price / 100)} ₽)</span>`)}
         ${item('YTM', `<span class="text-up">${U.pct(b.ytm, false)}</span>`)}
-        ${item('Купон', `${U.pct(b.coupon, false)} · ${U.price(b.couponValue)} ₽`)}
+        <div class="p-3 rounded-lg bg-bg/60 border border-line"><div class="text-[11px] text-muted uppercase tracking-wide">Купон</div><div class="mt-1 font-semibold num" id="bond-coupon-cell">${b.coupon != null
+          ? `${b.couponDerived ? '≈' : ''}${U.pct(b.coupon, false)}${b.couponValue ? ` · ${U.price(b.couponValue)} ₽` : ''}`
+          : '<span class="text-warn">плавающий</span><div class="text-xs text-muted font-normal">объявляется перед выплатой</div>'}</div></div>
         ${item('Выплаты', `${COUPON_FREQ[b.couponPeriod] || ''} (${b.couponPeriod} дн.)`)}
         ${item('Ближайший купон', `${U.date(b.nextCoupon)} <span class="text-xs text-muted font-normal">через ${toCoupon} ${U.plural(toCoupon, ['день', 'дня', 'дней'])}</span>`)}
         ${item('Погашение', U.date(b.maturity))}
@@ -440,16 +472,18 @@
         ${item('Дюрация', b.duration ? `${U.price(b.duration)} г.` : '—')}
         ${item('Номинал', `${U.int(b.nominal)} ₽`)}
       </div>
-      <p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.</p>
+      ${b.coupon != null ? `<p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.${b.couponDerived ? ' Ставка рассчитана по размеру ближайшего купона.' : ''}</p>` : ''}
+      <div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Купоны</div><div id="bond-schedule" data-isin="${b.isin}" class="mt-1.5"><span class="skeleton h-16 w-full block"></span></div></div>
       ${features ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Особенности выпуска</div><div class="mt-1.5 flex flex-wrap gap-1.5">${features}</div></div>` : ''}
       ${reasons.length ? `<div class="mt-4 p-3 rounded-lg border border-warn/40 bg-warn/5">
-        <div class="text-sm font-semibold">Почему купон ${U.pct(b.coupon, false)}, а доходность ${U.pct(b.ytm, false)}</div>
+        <div class="text-sm font-semibold">${b.coupon != null ? `Почему купон ${U.pct(b.coupon, false)}, а доходность ${U.pct(b.ytm, false)}` : `Почему доходность ${U.pct(b.ytm, false)}`}</div>
         <ul class="mt-1.5 space-y-1.5 text-sm text-muted list-disc pl-4">${reasons.map((x) => `<li>${x}</li>`).join('')}</ul>
       </div>` : ''}
       ${b.type === 'corp' ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Об эмитенте</div><div id="bond-issuer" data-isin="${b.isin}" class="mt-1.5"></div></div>` : ''}`;
     $('#modal').classList.remove('hidden');
     $('#modal').scrollTop = 0;   // окно прокручивается — каждую карточку открываем с начала
     U.icons();
+    loadSchedule(b);
     if (b.type === 'corp') loadIssuer(b);
   }
   const closeModal = () => $('#modal').classList.add('hidden');

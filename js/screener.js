@@ -258,7 +258,7 @@ FP.Screener = (() => {
       && (st.rating === 'all' || b.rating === 'AAA')
       && (v.ytmMin == null || b.ytm >= v.ytmMin) && (v.ytmMax == null || b.ytm <= v.ytmMax)
       && (v.yearsMin == null || b.yearsToMaturity >= v.yearsMin) && (v.yearsMax == null || b.yearsToMaturity <= v.yearsMax)
-      && (v.couponMin == null || b.coupon >= v.couponMin)
+      && (v.couponMin == null || (b.coupon != null && b.coupon >= v.couponMin))
       && (v.durMax == null || (b.duration != null && b.duration <= v.durMax))
       && (st.freq === 'all' || b.couponPeriod === st.freq || (st.freq === 30 && b.couponPeriod >= 28 && b.couponPeriod <= 31) || (st.freq === 91 && b.couponPeriod >= 89 && b.couponPeriod <= 92))
       && (!st.traded || b.turnover > 0));
@@ -323,7 +323,7 @@ FP.Screener = (() => {
         <td class="!text-left hidden lg:table-cell text-muted">${b.sector}</td>
         <td>${U.price(b.price)}</td>
         <td class="font-semibold ${b.ytm >= 20 ? 'text-warn' : 'text-up'}">${U.pct(b.ytm, false)}</td>
-        <td>${b.coupon ? U.pct(b.coupon, false) : '—'}</td>
+        <td>${b.coupon != null ? `${b.couponDerived ? '≈' : ''}${U.pct(b.coupon, false)}` : '<span class="text-warn" title="Плавающий купон: ставка объявляется перед выплатой">плав.</span>'}</td>
         <td class="hidden sm:table-cell">${b.couponPeriod ? `<span class="text-muted">${ui.couponFreq[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.` : '—'}</td>
         <td class="hidden md:table-cell">${b.duration ? U.price(b.duration) + ' г.' : '—'}</td>
         <td class="hidden md:table-cell"><div>${U.date(b.maturity)}</div><div class="text-xs text-muted">через ${U.price(b.yearsToMaturity, 1)} г.</div></td>

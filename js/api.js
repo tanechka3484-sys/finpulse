@@ -45,6 +45,7 @@ FP.API = (() => {
     getUniverse: call('getUniverse'),
     getRates: call('getRates'),
     getMoreDividends: call('getMoreDividends'),
+    getBondSchedule: call('getBondSchedule'),
 
     // Синхронные методы вызываются только после загрузки акций
     quote: (t) => src && src.quote(t),

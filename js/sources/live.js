@@ -275,18 +275,30 @@ FP.LiveSource = (() => {
     }).filter(Boolean);
   }
 
+  /**
+   * Ставка купона. У флоатеров MOEX не даёт COUPONPERCENT (ставка меняется каждый период):
+   * если известна сумма ближайшего купона, считаем ставку из неё, иначе — null («не объявлен»).
+   */
+  function couponOf(s) {
+    const face = num(s.FACEVALUE) || 1000, period = num(s.COUPONPERIOD), value = first(s.COUPONVALUE);
+    const pct = first(s.COUPONPERCENT);
+    if (pct != null) return { coupon: pct, couponValue: value, couponDerived: false };
+    if (value && period) return { coupon: value / face * 365 / period * 100, couponValue: value, couponDerived: true };
+    return { coupon: null, couponValue: null, couponDerived: false };
+  }
+
   function toBond({ s, m, ytm, price }, type) {
     const name = s.SHORTNAME;
     const rating = type === 'ofz' ? 'AAA' : (RATINGS.find(([re]) => re.test(`${name} ${s.SECNAME}`)) || [])[1] || 'н/д';
     const durDays = num(m.DURATION);
     return {
       isin: s.ISIN || s.SECID, secid: s.SECID, name, issuer: s.SECNAME || name, type, price, ytm,
-      coupon: num(s.COUPONPERCENT) ?? 0, couponPeriod: num(s.COUPONPERIOD) ?? 0, maturity: s.MATDATE,
+      ...couponOf(s), couponPeriod: num(s.COUPONPERIOD) ?? 0, maturity: s.MATDATE,
       duration: durDays ? durDays / 365.25 : null, rating, nominal: num(s.FACEVALUE) ?? 1000,
       ratingScore: { AAA: 10, 'AA+': 9 }[rating] ?? 0,
       ratingEst: type !== 'ofz' && rating !== 'н/д',   // рейтинг угадан по названию эмитента, а не взят у агентства
       yearsToMaturity: Math.max(0, U.daysUntil(s.MATDATE) / 365.25),
-      couponValue: num(s.COUPONVALUE) ?? 0, nextCoupon: s.NEXTCOUPON && !String(s.NEXTCOUPON).startsWith('0000') ? s.NEXTCOUPON : s.MATDATE,
+      nextCoupon: s.NEXTCOUPON && !String(s.NEXTCOUPON).startsWith('0000') ? s.NEXTCOUPON : s.MATDATE,
       turnover: num(m.VALTODAY) ?? 0,
       currency: !s.FACEUNIT || s.FACEUNIT === 'SUR' ? 'RUB' : s.FACEUNIT,
       country: String(s.ISIN || '').slice(0, 2) || 'RU',
@@ -475,6 +487,20 @@ FP.LiveSource = (() => {
     },
 
     getNews: fetchNews,
+
+    /** График купонов и амортизаций выпуска (MOEX ISS bondization). */
+    async getBondSchedule(secid) {
+      const coupons = new Map(), amort = new Map();
+      for (let start = 0; start < 1500; start += 100) {
+        const j = await iss(`securities/${encodeURIComponent(secid)}/bondization`, { 'iss.only': 'coupons,amortizations', limit: 100, start });
+        const c = table(j.coupons), a = table(j.amortizations);
+        c.forEach((r) => { const date = String(r.coupondate).slice(0, 10); coupons.set(date, { date, value: num(r.value), pct: num(r.valueprc) }); });
+        a.forEach((r) => { const date = String(r.amortdate).slice(0, 10); amort.set(date, { date, value: num(r.value), pct: num(r.valueprc) }); });
+        if (c.length < 100 && a.length < 100) break;
+      }
+      const byDate = (x, y) => x.date.localeCompare(y.date);
+      return { coupons: [...coupons.values()].sort(byDate), amortizations: [...amort.values()].sort(byDate) };
+    },
 
     /** Официальные курсы ЦБ РФ ко всем валютам (за 1 единицу, в рублях). */
     async getRates() {
