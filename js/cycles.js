@@ -24,16 +24,16 @@ FP.Cycles = (() => {
     reflation: {
       name: 'Рецессия', alias: 'спад, дно цикла', g: -1, i: -1, color: 'down',
       about: 'Экономика сокращается, инфляция снижается. Центробанк смягчает политику и снижает ставку.',
-      best: 'Длинные облигации с фиксированным купоном: при снижении ставок их цена растёт сильнее всего.',
-      stocks: 'Защитные компании со стабильным спросом и дивидендами.',
+      best: 'Облигации: ЦБ переходит к смягчению, и длинные облигации с фиксированным купоном дорожают сильнее всего.',
+      stocks: 'Лучше держатся наименее чувствительные к экономике компании: защитные, со стабильным спросом и дивидендами.',
       bonds: 'Длинные ОФЗ-ПД, высокая дюрация.',
       worst: 'Сырьё и циклические акции.',
-      sectors: ['Ритейл'], assets: { 'Облигации': 3, 'Акции': 1, 'Сырьё': -2, 'Кэш': 0 },
+      sectors: ['Ритейл'], assets: { 'Облигации': 3, 'Акции': -1, 'Сырьё': -2, 'Кэш': 1 },
     },
     recovery: {
       name: 'Восстановление', alias: 'выход из спада', g: 1, i: -1, color: 'up',
       about: 'Рост ускоряется, инфляция ещё низкая, ставки остаются низкими. Прибыли компаний быстро восстанавливаются.',
-      best: 'Акции, особенно циклические: банки, технологии.',
+      best: 'Акции: в начале цикла чувствительные к экономике активы обычно показывают лучший результат за весь цикл.',
       stocks: 'Финансы и IT, бумаги с высокой бетой.',
       bonds: 'Корпоративные облигации, средняя дюрация.',
       worst: 'Кэш и депозиты.',
@@ -42,20 +42,20 @@ FP.Cycles = (() => {
     overheat: {
       name: 'Рост', alias: 'подъём к пику, перегрев', g: 1, i: 1, color: 'accent',
       about: 'Экономика растёт выше потенциала и подходит к пику: мощности загружены, инфляция ускоряется, центробанк повышает ставку.',
-      best: 'Сырьё и сырьевые компании: нефтегаз, металлы.',
-      stocks: 'Энергетика и экспортёры.',
-      bonds: 'Короткие облигации и флоатеры; длинные ОФЗ дешевеют.',
+      best: 'Акции по-прежнему выигрывают от растущей экономики, но их преимущество сужается.',
+      stocks: 'Широкий рынок: технологии и финансы; по мере роста инфляции — постепенно энергетика.',
+      bonds: 'Короткие облигации и флоатеры: ЦБ ужесточает политику, длинные ОФЗ дешевеют.',
       worst: 'Длинные облигации.',
-      sectors: ['Энергетика'], assets: { 'Облигации': -2, 'Акции': 1, 'Сырьё': 3, 'Кэш': 0 },
+      sectors: ['IT', 'Финансы', 'Энергетика'], assets: { 'Облигации': -1, 'Акции': 2, 'Сырьё': 1, 'Кэш': 0 },
     },
     stagflation: {
       name: 'Замедление', alias: 'после пика, стагфляция', g: -1, i: 1, color: 'warn',
       about: 'Рост тормозит, а инфляция ещё высокая. Ставки остаются высокими, прибыли компаний под давлением.',
-      best: 'Кэш, депозиты и денежный рынок: высокая ставка при низком риске.',
-      stocks: 'Защитные компании с дивидендами, минимальная доля акций роста.',
-      bonds: 'Флоатеры и короткие ОФЗ.',
+      best: 'Сырьё и короткие инструменты (депозиты, денежный рынок): инфляция ещё растёт, ставки высокие.',
+      stocks: 'Сырьевые компании и защитные бумаги с дивидендами; меньше акций роста.',
+      bonds: 'Флоатеры и короткие ОФЗ; кривая доходности плоская или перевёрнутая.',
       worst: 'Акции роста и длинные облигации.',
-      sectors: ['Ритейл'], assets: { 'Облигации': -1, 'Акции': -2, 'Сырьё': 1, 'Кэш': 3 },
+      sectors: ['Энергетика', 'Ритейл'], assets: { 'Облигации': -1, 'Акции': -1, 'Сырьё': 2, 'Кэш': 2 },
     },
   };
   // Порядок фаз делового цикла: восстановление → рост → замедление → рецессия
@@ -64,6 +64,23 @@ FP.Cycles = (() => {
   const TEXT = { accent: 'text-accent', up: 'text-up', warn: 'text-warn', down: 'text-down' };
   const TAG = { accent: 'tag-accent', up: 'tag-up', warn: 'tag-warn', down: 'tag-down' };
   const phaseOf = (g, i) => (g >= 0 ? (i >= 0 ? 'overheat' : 'recovery') : (i >= 0 ? 'stagflation' : 'reflation'));
+
+  /**
+   * Мировой цикл по оценке Fidelity (Asset Allocation Research Team) — для сравнения.
+   * Fidelity оценивает США и мир, Россию не разбирает. Обновляется вручную раз в квартал
+   * по свежему Quarterly Business Cycle Update.
+   */
+  const FIDELITY = {
+    asOf: '2026-10-15',
+    phase: 'overheat',   // у Fidelity — mid-cycle (середина цикла), на сайте это фаза «Рост»
+    global: 'середина цикла: экспансия продолжается, но несинхронно по странам',
+    us: 'середина цикла',
+    note: 'Мировая активность остаётся в экспансии; высокая инфляция и цены на нефть привели к ужесточению денежной политики.',
+    links: [
+      ['Business Cycle Update, 4-й кв. 2026', 'https://institutional.fidelity.com/advisors/insights/topics/market-commentary/fourth-quarter-2026-quarterly-business-cycle-update'],
+      ['Quarterly market update', 'https://www.fidelity.com/viewpoints/market-and-economic-insights/quarterly-market-update'],
+    ],
+  };
 
   /** Циклы экономики России — качественная справка. */
   const HISTORY = [
@@ -279,6 +296,7 @@ FP.Cycles = (() => {
         <div class="mt-2 grid gap-2">${Object.entries(p.assets).map(([a, v]) => `
           <div class="grid grid-cols-[90px_1fr_74px] items-center gap-3 text-xs"><span>${a}</span>${assetBar(v)}<span class="text-right ${v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'text-muted'}">${v > 1 ? 'лидер' : v > 0 ? 'выше рынка' : v < -1 ? 'аутсайдер' : v < 0 ? 'ниже рынка' : 'нейтрально'}</span></div>`).join('')}
         </div>
+        <p class="mt-2 text-[11px] text-muted">Оценки по классам активов — моё обобщение описания фаз в материалах Fidelity о деловом цикле и модели «инвестиционных часов», а не их числовые данные.</p>
       </div>
       ${tickers.length ? `<div class="mt-4">
         <div class="text-[11px] uppercase tracking-wide text-muted">Бумаги из секторов фазы · ${p.sectors.join(', ')} · доходность за 3 мес.</div>
@@ -355,6 +373,16 @@ FP.Cycles = (() => {
         <h3 class="card-title"><i data-lucide="activity" class="w-4 h-4 text-accent"></i>Деловой цикл России</h3>
         <p class="text-xs text-muted mt-1">Волна выше линии тренда — экономика растёт быстрее обычного, ниже — медленнее или сокращается. Нажмите на период, чтобы открыть описание фазы.</p>
         <div class="mt-3">${waveSvg(pos, current, flatG && flatI, headline)}</div>
+        <div class="mt-4 p-3 rounded-lg border border-line bg-bg/50">
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <span class="font-semibold">Для сравнения: мировой цикл по Fidelity</span>
+            <button type="button" class="tag ${TAG[PHASES[FIDELITY.phase].color]}" data-phase="${FIDELITY.phase}">${PHASES[FIDELITY.phase].name}</button>
+            <span class="text-xs text-muted">обзор от ${U.date(FIDELITY.asOf)}</span>
+          </div>
+          <p class="mt-1.5 text-sm text-muted">Мир — ${FIDELITY.global}; США — ${FIDELITY.us}. ${FIDELITY.note}</p>
+          <p class="mt-1.5 text-xs text-muted">Fidelity называет фазы «ранний — средний — поздний цикл — рецессия»; на сайте им соответствуют «восстановление — рост — замедление — рецессия». Россию Fidelity не оценивает, поэтому это ориентир по мировой экономике, а не по российской.
+            Источник: ${FIDELITY.links.map(([t, u]) => `<a class="text-accent hover:underline" href="${u}" target="_blank" rel="noopener">${t}</a>`).join(', ')}.</p>
+        </div>
       </div>
 
       <div class="grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
