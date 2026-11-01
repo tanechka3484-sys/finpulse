@@ -937,6 +937,19 @@
       }
     });
 
+    // Кнопки масштаба графика
+    $('#chart-wrap').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-zoom]');
+      if (!b) return;
+      e.stopPropagation();
+      const z = b.dataset.zoom;
+      if (z === 'fit') { chart.fit(); return; }
+      if (!chart.zoom(z === 'in' ? 0.6 : 1 / 0.6)) {
+        const bigger = { '1D': '1W', '1W': '1M', '1M': '1Y', '1Y': 'ALL' }[state.interval];
+        toast(bigger ? `Видны все свечи интервала ${state.interval}. Чтобы увидеть больше истории, выберите ${bigger}` : 'Видна вся доступная история');
+      }
+    });
+
     // Переключатели графика
     $('#interval-switch').addEventListener('click', (e) => {
       const b = e.target.closest('[data-interval]');

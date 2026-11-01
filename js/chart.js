@@ -18,6 +18,7 @@ FP.PriceChart = class PriceChart {
 
     this.chart = LW.createChart(container, {
       autoSize: true,
+      ...PriceChart.INTERACTION,
       crosshair: { mode: LW.CrosshairMode.Normal },
       rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.24 } },
       timeScale: { rightOffset: 4, barSpacing: 7, fixLeftEdge: true, lockVisibleTimeRangeOnResize: true },
@@ -34,6 +35,42 @@ FP.PriceChart = class PriceChart {
 
     this.applyTheme();
   }
+
+  /**
+   * Управление графиком: колесо и перетаскивание мышью, щипок и горизонтальный свайп пальцем.
+   * Вертикальный свайп отдаём странице — иначе на телефоне её невозможно пролистать через график.
+   */
+  static INTERACTION = {
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+    handleScale: { axisPressedMouseMove: true, axisDoubleClickReset: true, mouseWheel: true, pinch: true },
+  };
+
+  /** Вернуть обычное управление (после того как инструмент рисования его блокировал). */
+  setInteractive(on) {
+    if (!this.chart) return;
+    this.chart.applyOptions(on ? PriceChart.INTERACTION : { handleScroll: false, handleScale: false });
+  }
+
+  /**
+   * Масштаб кнопками: factor < 1 — приблизить, > 1 — отдалить.
+   * Если видны последние свечи, правый край остаётся на месте, иначе масштаб меняется от центра.
+   * Возвращает false, если отдалять дальше некуда — все свечи интервала уже на экране.
+   */
+  zoom(factor) {
+    if (!this.chart || !this.bars.length) return true;
+    const ts = this.chart.timeScale(), r = ts.getVisibleLogicalRange();
+    if (!r) return true;
+    const n = this.bars.length, span = r.to - r.from;
+    if (factor > 1 && r.from <= 0.5 && r.to >= n - 1) return false;
+    const next = Math.min(Math.max(span * factor, 8), n + 8);
+    const atEnd = r.to >= n - 2;
+    const to = atEnd ? r.to : (r.from + r.to) / 2 + next / 2;
+    ts.setVisibleLogicalRange({ from: to - next, to });
+    return true;
+  }
+
+  /** Показать весь интервал. */
+  fit() { if (this.chart) this.chart.timeScale().fitContent(); }
 
   /** Цвета из CSS-переменных текущей темы. */
   palette() {

@@ -147,6 +147,12 @@
             <div id="chart-wrap" class="relative flex-1 min-w-0 min-h-0">
               <div id="chart" class="absolute inset-0"></div>
               <div id="chart-legend" class="absolute left-3 right-20 top-2 z-10 text-[11px] font-mono text-muted pointer-events-none"></div>
+              <!-- Кнопки масштаба: щипок на телефоне работает ненадёжно -->
+              <div class="chart-zoom" role="group" aria-label="Масштаб графика">
+                <button type="button" data-zoom="out" title="Отдалить" aria-label="Отдалить"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+                <button type="button" data-zoom="in" title="Приблизить" aria-label="Приблизить"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+                <button type="button" data-zoom="fit" title="Весь интервал (или двойное нажатие на графике)" aria-label="Показать весь интервал"><i data-lucide="maximize-2" class="w-4 h-4"></i></button>
+              </div>
               <div id="chart-skeleton" class="absolute inset-0 z-20 bg-surface grid place-items-center">
                 <div class="w-full h-full p-6 flex items-end gap-1.5">
                   <!-- заполняется из JS -->

@@ -324,3 +324,15 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 .stat-link { cursor: pointer; }
 .stat-link:hover { border-color: rgb(var(--c-accent) / .6); }
 .stat-link:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 2px; }
+
+/* Кнопки масштаба графика — над шкалой времени, слева */
+.chart-zoom {
+  position: absolute; left: 8px; bottom: 34px; z-index: 12;
+  display: flex; gap: 2px; padding: 2px; border-radius: 8px;
+  background: rgb(var(--c-surface) / .85); border: 1px solid rgb(var(--c-line)); backdrop-filter: blur(4px);
+}
+.chart-zoom button {
+  width: 34px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: rgb(var(--c-muted));
+}
+.chart-zoom button:hover, .chart-zoom button:active { color: rgb(var(--c-fg)); background: rgb(var(--c-elevated)); }
+.chart-zoom button:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 1px; }

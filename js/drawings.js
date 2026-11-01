@@ -341,7 +341,7 @@ FP.ChartDrawings = class ChartDrawings {
 
   /** Пока рисуем или тащим — график не должен скроллиться. */
   lockChart(lock) {
-    this.chart.applyOptions({ handleScroll: !lock, handleScale: !lock });
+    this.pc.setInteractive(!lock);
     this.wrap.style.touchAction = lock ? 'none' : '';
   }
 
@@ -350,7 +350,7 @@ FP.ChartDrawings = class ChartDrawings {
     ['mousedown', 'touchstart'].forEach((t) => this.wrap.addEventListener(t, block, { capture: true }));
 
     this.wrap.addEventListener('pointerdown', (e) => {
-      if (e.target === this.textInput || this.selBar.contains(e.target)) return;
+      if (e.target === this.textInput || this.selBar.contains(e.target) || e.target.closest('.chart-zoom')) return;
       const [x, y] = this.local(e);
       if (!this.inPane(x, y) || !this.bars.length) return;
 
@@ -425,7 +425,9 @@ FP.ChartDrawings = class ChartDrawings {
     this.wrap.addEventListener('dblclick', (e) => {
       const [x, y] = this.local(e);
       const h = this.hit(x, y);
-      if (h && h.item.type === 'text') { e.stopPropagation(); this.editText(h.item); }
+      if (h && h.item.type === 'text') { e.stopPropagation(); this.editText(h.item); return; }
+      // Двойное нажатие по пустому месту графика — показать весь интервал
+      if (!this.tool && !h && this.inPane(x, y)) this.pc.fit();
     }, { capture: true });
   }
 
