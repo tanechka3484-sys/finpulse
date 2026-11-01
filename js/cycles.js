@@ -1,11 +1,13 @@
 /**
  * FinPulse — вкладка «Экономические циклы».
  *
- * Фаза определяется по модели «инвестиционных часов» (Merrill Lynch Investment Clock):
- * две оси — динамика роста экономики и динамика инфляции — дают четыре фазы:
- *   Спад (рост ↓, инфляция ↓) → Восстановление (↑, ↓) → Перегрев (↑, ↑) → Стагфляция (↓, ↑).
+ * Деловой цикл показан волной на шкале времени: восстановление → рост → замедление → рецессия.
+ * Текущая фаза оценивается по схеме «инвестиционных часов» Merrill Lynch: две оси —
+ * динамика роста и динамика инфляции — дают четыре фазы:
+ *   Восстановление (рост ↑, инфляция ↓) → Рост/пик (↑, ↑) → Замедление (↓, ↑) → Рецессия (↓, ↓).
+ * Угол точки (рост, инфляция) — это и есть фаза синусоиды на волне.
  *
- * Положение на часах считается по рыночным сигналам из уже загруженных данных
+ * Положение считается по рыночным сигналам из уже загруженных данных
  * (тренд IMOEX, ширина рынка, наклон кривой ОФЗ, циклические vs защитные сектора,
  * нефтегаз vs рынок) и по макро-оценке пользователя (ВВП и инфляция по данным
  * Росстата и ЦБ). Модель упрощённая и носит справочный характер.
@@ -20,8 +22,8 @@ FP.Cycles = (() => {
   /* ---------------- Фазы и их «плейбук» ---------------- */
   const PHASES = {
     reflation: {
-      name: 'Спад', alias: 'рефляция', g: -1, i: -1, color: 'accent',
-      about: 'Экономика замедляется, инфляция снижается. Центробанк смягчает политику и снижает ставку.',
+      name: 'Рецессия', alias: 'спад, дно цикла', g: -1, i: -1, color: 'down',
+      about: 'Экономика сокращается, инфляция снижается. Центробанк смягчает политику и снижает ставку.',
       best: 'Длинные облигации с фиксированным купоном: при снижении ставок их цена растёт сильнее всего.',
       stocks: 'Защитные компании со стабильным спросом и дивидендами.',
       bonds: 'Длинные ОФЗ-ПД, высокая дюрация.',
@@ -29,7 +31,7 @@ FP.Cycles = (() => {
       sectors: ['Ритейл'], assets: { 'Облигации': 3, 'Акции': 1, 'Сырьё': -2, 'Кэш': 0 },
     },
     recovery: {
-      name: 'Восстановление', alias: 'ранний цикл', g: 1, i: -1, color: 'up',
+      name: 'Восстановление', alias: 'выход из спада', g: 1, i: -1, color: 'up',
       about: 'Рост ускоряется, инфляция ещё низкая, ставки остаются низкими. Прибыли компаний быстро восстанавливаются.',
       best: 'Акции, особенно циклические: банки, технологии.',
       stocks: 'Финансы и IT, бумаги с высокой бетой.',
@@ -38,8 +40,8 @@ FP.Cycles = (() => {
       sectors: ['Финансы', 'IT'], assets: { 'Облигации': 1, 'Акции': 3, 'Сырьё': 0, 'Кэш': -2 },
     },
     overheat: {
-      name: 'Перегрев', alias: 'поздний цикл', g: 1, i: 1, color: 'warn',
-      about: 'Экономика работает на пределе мощностей, инфляция растёт, центробанк повышает ставку.',
+      name: 'Рост', alias: 'подъём к пику, перегрев', g: 1, i: 1, color: 'accent',
+      about: 'Экономика растёт выше потенциала и подходит к пику: мощности загружены, инфляция ускоряется, центробанк повышает ставку.',
       best: 'Сырьё и сырьевые компании: нефтегаз, металлы.',
       stocks: 'Энергетика и экспортёры.',
       bonds: 'Короткие облигации и флоатеры; длинные ОФЗ дешевеют.',
@@ -47,8 +49,8 @@ FP.Cycles = (() => {
       sectors: ['Энергетика'], assets: { 'Облигации': -2, 'Акции': 1, 'Сырьё': 3, 'Кэш': 0 },
     },
     stagflation: {
-      name: 'Стагфляция', alias: 'жёсткая политика', g: -1, i: 1, color: 'down',
-      about: 'Рост замедляется, а инфляция остаётся высокой. Ставки высокие, прибыли компаний под давлением.',
+      name: 'Замедление', alias: 'после пика, стагфляция', g: -1, i: 1, color: 'warn',
+      about: 'Рост тормозит, а инфляция ещё высокая. Ставки остаются высокими, прибыли компаний под давлением.',
       best: 'Кэш, депозиты и денежный рынок: высокая ставка при низком риске.',
       stocks: 'Защитные компании с дивидендами, минимальная доля акций роста.',
       bonds: 'Флоатеры и короткие ОФЗ.',
@@ -56,7 +58,8 @@ FP.Cycles = (() => {
       sectors: ['Ритейл'], assets: { 'Облигации': -1, 'Акции': -2, 'Сырьё': 1, 'Кэш': 3 },
     },
   };
-  const ORDER = ['reflation', 'recovery', 'overheat', 'stagflation'];
+  // Порядок фаз делового цикла: восстановление → рост → замедление → рецессия
+  const ORDER = ['recovery', 'overheat', 'stagflation', 'reflation'];
   // Полные имена классов — чтобы Tailwind CDN гарантированно их сгенерировал
   const TEXT = { accent: 'text-accent', up: 'text-up', warn: 'text-warn', down: 'text-down' };
   const TAG = { accent: 'tag-accent', up: 'tag-up', warn: 'tag-warn', down: 'tag-down' };
@@ -64,15 +67,15 @@ FP.Cycles = (() => {
 
   /** Циклы экономики России — качественная справка. */
   const HISTORY = [
-    { years: '1998', phase: 'stagflation', text: 'Дефолт по ГКО и девальвация рубля: резкий спад и всплеск инфляции.' },
-    { years: '1999–2008', phase: 'recovery', text: 'Долгий подъём на фоне роста цен на нефть и притока капитала.' },
+    { years: '1998', phase: 'reflation', text: 'Дефолт по ГКО и девальвация рубля: резкий спад и всплеск инфляции.' },
+    { years: '1999–2008', phase: 'overheat', text: 'Долгий подъём на фоне роста цен на нефть и притока капитала.' },
     { years: '2008–2009', phase: 'reflation', text: 'Мировой финансовый кризис: глубокий спад ВВП, падение рынка акций.' },
     { years: '2010–2013', phase: 'recovery', text: 'Восстановление, к 2013 году — постепенное замедление роста.' },
-    { years: '2014–2016', phase: 'stagflation', text: 'Падение нефти и санкции: девальвация, рост инфляции и рецессия.' },
-    { years: '2017–2019', phase: 'recovery', text: 'Инфляция у цели, ЦБ снижает ставку, умеренный рост экономики.' },
+    { years: '2014–2016', phase: 'reflation', text: 'Падение нефти и санкции: девальвация, рост инфляции и рецессия.' },
+    { years: '2017–2019', phase: 'overheat', text: 'Инфляция у цели, ЦБ снижает ставку, умеренный рост экономики.' },
     { years: '2020', phase: 'reflation', text: 'Пандемия: спад и резкое смягчение денежно-кредитной политики.' },
-    { years: '2021', phase: 'overheat', text: 'Быстрое восстановление и ускорение инфляции; ЦБ начинает повышать ставку.' },
-    { years: '2022', phase: 'stagflation', text: 'Санкционный шок: экстренное повышение ставки, затем её быстрое снижение.' },
+    { years: '2021', phase: 'recovery', text: 'Быстрое восстановление и ускорение инфляции; ЦБ начинает повышать ставку.' },
+    { years: '2022', phase: 'reflation', text: 'Санкционный шок: экстренное повышение ставки, затем её быстрое снижение.' },
     { years: '2023–2024', phase: 'overheat', text: 'Рост на госрасходах, дефицит кадров, высокая инфляция; ставка поднята до 21%.' },
     { years: '2025', phase: 'stagflation', text: 'Охлаждение экономики при всё ещё высокой инфляции; ЦБ начинает снижать ставку.' },
   ];
@@ -155,7 +158,7 @@ FP.Cycles = (() => {
   /** На какие оси влияет каждый сигнал (g — рост, i — инфляция). */
   const AXES = { trend: 'g', breadth: 'g', curve: 'gi', rotation: 'g', commod: 'i', 'm-growth': 'g', 'm-infl': 'i' };
 
-  /** Сводная точка на часах: средневзвешенное по сигналам каждой оси, g, i ∈ [-1, 1]. */
+  /** Сводная точка (рост, инфляция): средневзвешенное по сигналам каждой оси, g, i ∈ [-1, 1]. */
   function position(signals) {
     const axis = (k) => {
       const used = signals.filter((s) => AXES[s.id].includes(k));
@@ -166,33 +169,86 @@ FP.Cycles = (() => {
   }
 
   /* ---------------- Отрисовка ---------------- */
-  function clockSvg(pos, current) {
-    const S = 300, C = S / 2, R = 128;
-    const fill = (k) => `rgb(var(--c-${PHASES[k].color}) / ${k === current ? 0.22 : 0.07})`;
-    // Квадранты: x — рост (вправо ↑), y — инфляция (вверх ↑)
-    const quads = { overheat: [0, -90], stagflation: [-90, -180], reflation: [180, 90], recovery: [90, 0] };
-    const arc = (a0, a1) => {
-      const p = (a) => [C + R * Math.cos(a * Math.PI / 180), C + R * Math.sin(a * Math.PI / 180)];
-      const [x0, y0] = p(a0), [x1, y1] = p(a1);
-      return `M${C},${C} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 0,0 ${x1.toFixed(1)},${y1.toFixed(1)} Z`;
-    };
-    const label = (k, x, y) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="12" font-weight="600" fill="rgb(var(--c-${k === current ? PHASES[k].color : 'muted'}))">${PHASES[k].name}</text>`;
-    const px = C + pos.g * R * 0.82, py = C - pos.i * R * 0.82;
+  /**
+   * Волна делового цикла на шкале времени. Каждая фаза ведёт волну к своей опорной точке:
+   * восстановление — к линии тренда снизу, рост — к пику, замедление — к тренду сверху,
+   * рецессия — ко дну. Между опорными точками — плавная косинусная интерполяция.
+   * История (1998–2025) — справочная разметка; последний отрезок — оценка модели по рынку.
+   */
+  const PHASE_END = { recovery: 0, overheat: 1, stagflation: 0, reflation: -1 };
+
+  function waveSvg(pos, current, undetermined, headline) {
+    const W = 900, H = 290, L = 34, R = 24, T = 34, B = 58;
+    const now = new Date();
+    const nowX = now.getFullYear() + (now.getMonth() + now.getDate() / 31) / 12;
+    const periods = HISTORY.map((h) => {
+      const [a, b] = h.years.split(/[–-]/).map(Number);
+      return { ...h, x0: a, x1: (b || a) + 1 };
+    });
+    // Соседние периоды с общим годом («1999–2008» и «2008–2009») делят его пополам
+    for (let k = 1; k < periods.length; k++) {
+      if (periods[k].x0 < periods[k - 1].x1) { const mid = periods[k].x0 + 0.5; periods[k - 1].x1 = mid; periods[k].x0 = mid; }
+    }
+    const x0 = periods[0].x0, x1 = Math.ceil(nowX + 0.4);
+    const sx = (x) => L + (x - x0) / (x1 - x0) * (W - L - R);
+    const sy = (y) => T + (1 - (y + 1.15) / 2.3) * (H - T - B);
+    const col = (k, a = 1) => `rgb(var(--c-${PHASES[k].color}) / ${a})`;
+
+    // Текущее положение на волне: угол точки (рост, инфляция) — это фаза синусоиды
+    const phi = Math.atan2(pos.i, pos.g);
+    const yNow = undetermined ? 0 : Math.sin(phi);
+    const rising = Math.cos(phi) > 0;
+
+    // Опорные точки волны
+    const anchors = [{ x: x0, y: 0 }];
+    periods.forEach((p) => anchors.push({ x: p.x1, y: PHASE_END[p.phase] }));
+    const lastHist = anchors[anchors.length - 1];
+    const ease = (a, b, t) => a + (b - a) * (1 - Math.cos(Math.PI * t)) / 2;
+    const segPath = (a, b, n = 28) => Array.from({ length: n + 1 }, (_, k) => {
+      const t = k / n;
+      return `${sx(a.x + (b.x - a.x) * t).toFixed(1)},${sy(ease(a.y, b.y, t)).toFixed(1)}`;
+    });
+    const histPts = [];
+    for (let k = 0; k < anchors.length - 1; k++) histPts.push(...segPath(anchors[k], anchors[k + 1]).slice(k ? 1 : 0));
+    const modelPts = segPath(lastHist, { x: nowX, y: yNow }, 20);
+
+    const bands = periods.map((p) => `
+      <g class="cursor-pointer" data-phase="${p.phase}">
+        <rect x="${sx(p.x0).toFixed(1)}" y="${T - 14}" width="${(sx(p.x1) - sx(p.x0)).toFixed(1)}" height="${H - B - T + 14}" fill="${col(p.phase, 0.09)}"/>
+        <rect x="${sx(p.x0).toFixed(1)}" y="${H - B + 4}" width="${(sx(p.x1) - sx(p.x0) - 1).toFixed(1)}" height="6" rx="2" fill="${col(p.phase, 0.85)}"/>
+        <title>${p.years} · ${PHASES[p.phase].name}: ${p.text}</title>
+      </g>`).join('');
+    const modelBand = `<g class="cursor-pointer" data-phase="${current}">
+        <rect x="${sx(lastHist.x).toFixed(1)}" y="${T - 14}" width="${(sx(nowX) - sx(lastHist.x)).toFixed(1)}" height="${H - B - T + 14}" fill="${undetermined ? 'rgb(var(--c-muted) / .08)' : col(current, 0.14)}" stroke="${undetermined ? 'rgb(var(--c-muted) / .4)' : col(current, 0.5)}" stroke-dasharray="4 3"/>
+        <title>Оценка модели по текущим рыночным сигналам${undetermined ? '' : ': ' + PHASES[current].name}</title>
+      </g>`;
+    const years = [];
+    for (let y = x0; y <= x1; y += 2) years.push(y);
+    const nx = sx(nowX), ny = sy(yNow);
+    const label = undetermined ? 'Сейчас: фаза не определена' : `Сейчас: ${headline || PHASES[current].name}`;
+    const labelX = Math.min(nx, W - R - 4);
+
     return `
-      <svg viewBox="-28 -12 ${S + 56} ${S + 24}" class="w-full max-w-[340px] mx-auto h-auto" role="img" aria-label="Инвестиционные часы, текущая фаза: ${PHASES[current].name}">
-        ${Object.entries(quads).map(([k, [a0, a1]]) => `<path d="${arc(a0, a1)}" fill="${fill(k)}" stroke="rgb(var(--c-line))" class="cursor-pointer" data-phase="${k}"><title>${PHASES[k].name}</title></path>`).join('')}
-        <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="rgb(var(--c-line))"/>
-        <line x1="${C - R - 8}" y1="${C}" x2="${C + R + 8}" y2="${C}" stroke="rgb(var(--c-muted) / .5)" stroke-dasharray="3 3"/>
-        <line x1="${C}" y1="${C - R - 8}" x2="${C}" y2="${C + R + 8}" stroke="rgb(var(--c-muted) / .5)" stroke-dasharray="3 3"/>
-        <text x="${C + R + 10}" y="${C - 6}" font-size="10" text-anchor="end" fill="rgb(var(--c-muted))">рост ↑</text>
-        <text x="${C - R - 10}" y="${C - 6}" font-size="10" fill="rgb(var(--c-muted))">рост ↓</text>
-        <text x="${C + 6}" y="${C - R - 2}" font-size="10" fill="rgb(var(--c-muted))">инфляция ↑</text>
-        <text x="${C + 6}" y="${C + R + 10}" font-size="10" fill="rgb(var(--c-muted))">инфляция ↓</text>
-        ${label('overheat', C + R * 0.5, C - R * 0.5)}${label('stagflation', C - R * 0.5, C - R * 0.5)}
-        ${label('reflation', C - R * 0.5, C + R * 0.5 + 8)}${label('recovery', C + R * 0.5, C + R * 0.5 + 8)}
-        <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="14" fill="rgb(var(--c-${PHASES[current].color}) / .25)" class="cycle-pulse"/>
-        <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="7" fill="rgb(var(--c-${PHASES[current].color}))" stroke="rgb(var(--c-surface))" stroke-width="2.5"/>
-      </svg>`;
+      <p class="sm:hidden text-[11px] text-muted mb-1">← Проведите влево, чтобы посмотреть историю с 1998 года</p>
+      <div class="overflow-x-auto" data-wave-scroll><svg viewBox="0 0 ${W} ${H}" class="w-full h-auto min-w-[640px]" role="img" aria-label="Волна делового цикла с 1998 года, текущая фаза: ${undetermined ? 'не определена' : PHASES[current].name}">
+        ${bands}${modelBand}
+        <line x1="${L}" x2="${W - R}" y1="${sy(0)}" y2="${sy(0)}" stroke="rgb(var(--c-muted) / .55)" stroke-dasharray="4 4"/>
+        <text x="${L + 4}" y="${sy(0) - 5}" font-size="11" fill="rgb(var(--c-muted))">тренд</text>
+        <text x="${L + 4}" y="${sy(1) - 6}" font-size="10" fill="rgb(var(--c-muted))">пик</text>
+        <text x="${L + 4}" y="${sy(-1) + 14}" font-size="10" fill="rgb(var(--c-muted))">дно</text>
+        <polyline points="${histPts.join(' ')}" fill="none" stroke="rgb(var(--c-fg) / .85)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+        <polyline points="${modelPts.join(' ')}" fill="none" stroke="${undetermined ? 'rgb(var(--c-muted))' : col(current)}" stroke-width="2.4" stroke-dasharray="6 5" stroke-linecap="round"/>
+        ${years.map((y) => `<text x="${sx(y).toFixed(1)}" y="${H - B + 26}" font-size="11" text-anchor="middle" fill="rgb(var(--c-muted))">${y}</text>`).join('')}
+        <circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="13" fill="${undetermined ? 'rgb(var(--c-muted) / .25)' : col(current, 0.25)}" class="cycle-pulse"/>
+        <circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="6.5" fill="${undetermined ? 'rgb(var(--c-muted))' : col(current)}" stroke="rgb(var(--c-surface))" stroke-width="2.5"/>
+        ${undetermined ? '' : `<text x="${(nx + 11).toFixed(1)}" y="${(ny + (rising ? -9 : 15)).toFixed(1)}" font-size="13" fill="${col(current)}">${rising ? '↗' : '↘'}</text>`}
+        <text x="${labelX.toFixed(1)}" y="${T - 20}" font-size="12" font-weight="600" text-anchor="end" fill="${undetermined ? 'rgb(var(--c-muted))' : col(current)}">${label}</text>
+      </svg></div>
+      <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+        ${ORDER.map((k) => `<span class="flex items-center gap-1.5"><span class="w-3 h-1.5 rounded-sm" style="background:${col(k)}"></span>${PHASES[k].name}</span>`).join('')}
+        <span class="flex items-center gap-1.5"><span class="w-4 border-t-2 border-fg/80"></span>история (справочно)</span>
+        <span class="flex items-center gap-1.5"><span class="w-4 border-t-2 border-dashed border-muted"></span>оценка модели по рынку</span>
+      </div>`;
   }
 
   const assetBar = (score) => {
@@ -295,11 +351,15 @@ FP.Cycles = (() => {
     const macroSet = macro.growth || macro.infl;
 
     root.innerHTML = `
+      <div class="card">
+        <h3 class="card-title"><i data-lucide="activity" class="w-4 h-4 text-accent"></i>Деловой цикл России</h3>
+        <p class="text-xs text-muted mt-1">Волна выше линии тренда — экономика растёт быстрее обычного, ниже — медленнее или сокращается. Нажмите на период, чтобы открыть описание фазы.</p>
+        <div class="mt-3">${waveSvg(pos, current, flatG && flatI, headline)}</div>
+      </div>
+
       <div class="grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
         <div class="card">
-          <h3 class="card-title"><i data-lucide="clock-3" class="w-4 h-4 text-accent"></i>Инвестиционные часы</h3>
-          <div class="mt-3">${clockSvg(pos, current)}</div>
-          <div class="mt-3 text-center">
+          <div class="text-center">
             <div class="text-xs text-muted">Модель указывает на фазу</div>
             <div class="text-xl font-semibold ${flatG || flatI ? '' : TEXT[PHASES[current].color]}">${headline}</div>
             ${flatNote ? `<div class="mt-1 text-xs text-warn">${flatNote}</div>` : `<div class="mt-1 text-xs text-muted">Определённость: ${certainty}</div>`}
@@ -313,7 +373,7 @@ FP.Cycles = (() => {
 
       <div>
         <h3 class="text-base font-semibold">Сигналы цикла</h3>
-        <p class="text-xs text-muted mt-1">Рассчитаны по загруженным котировкам. Каждый сигнал сдвигает точку на часах по оси роста или инфляции.</p>
+        <p class="text-xs text-muted mt-1">Рассчитаны по загруженным котировкам. Каждый сигнал говорит, ускоряется или замедляется рост и растёт или снижается инфляция; вместе они задают положение на волне.</p>
         <div class="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           ${marketSignals.map(signalCard).join('') || '<div class="card text-sm text-muted">Недостаточно данных для рыночных сигналов.</div>'}
           ${indexCloses ? '' : '<div class="card"><span class="skeleton h-20 w-full block"></span></div>'}
@@ -323,7 +383,7 @@ FP.Cycles = (() => {
 
       <div class="card">
         <h3 class="card-title"><i data-lucide="history" class="w-4 h-4 text-accent"></i>Циклы экономики России</h3>
-        <p class="text-xs text-muted mt-1">Справочно: упрощённая классификация периодов по модели часов.</p>
+        <p class="text-xs text-muted mt-1">Справочно: моя упрощённая разметка периодов по фазам делового цикла, по общеизвестным событиям. Не официальная периодизация.</p>
         <ol class="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
           ${HISTORY.map((h) => `
             <li class="grid grid-cols-[86px_1fr] gap-3 items-baseline">
@@ -332,8 +392,11 @@ FP.Cycles = (() => {
             </li>`).join('')}
         </ol>
       </div>
-      <p class="text-[11px] text-muted">Модель «инвестиционных часов» — упрощение: реальные циклы не всегда проходят фазы по порядку и зависят от внешних шоков. Не является инвестиционной рекомендацией.</p>`;
+      <p class="text-[11px] text-muted">Модель цикла — упрощение: реальные циклы не всегда проходят фазы по порядку и зависят от внешних шоков. Текущая фаза оценивается по рыночным сигналам и вашей макро-оценке по схеме «инвестиционных часов» Merrill Lynch. Не является инвестиционной рекомендацией.</p>`;
     U.icons();
+    // На узком экране график шире окна — сразу показываем правый край с отметкой «Сейчас»
+    const sc = root.querySelector('[data-wave-scroll]');
+    if (sc) sc.scrollLeft = sc.scrollWidth;
   }
 
   function bind() {
