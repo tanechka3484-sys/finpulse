@@ -325,8 +325,9 @@
     if (m.subordinated) out.push('Выпуск <b>субординированный</b>: при банкротстве эмитента такие долги возвращают в последнюю очередь. За этот риск инвесторам платят надбавку к купону.');
     if (m.perpetual) out.push('Выпуск <b>бессрочный</b>: даты погашения нет, эмитент может не возвращать номинал. Это заметно рискованнее обычной облигации.');
     if (m.amortization) out.push('Выпуск <b>с амортизацией</b>: номинал возвращается частями, купон начисляется на остаток долга.');
-    const ofz = state.bonds.filter((x) => x.type === 'ofz' && x.kind === 'fixed' && Math.abs(x.yearsToMaturity - b.yearsToMaturity) <= 1.5);
-    if (b.type === 'corp' && !floating && ofz.length && b.currency === 'RUB') {
+    if (b.ytm == null) out.push('Мосбиржа <b>не рассчитала доходность</b> этого выпуска: по нему не было сделок или купон плавающий / привязан к инфляции, и будущие выплаты заранее неизвестны. Ориентируйтесь на историю купонов ниже.');
+    const ofz = state.bonds.filter((x) => x.type === 'ofz' && x.kind === 'fixed' && x.ytm != null && Math.abs(x.yearsToMaturity - b.yearsToMaturity) <= 1.5);
+    if (b.type === 'corp' && !floating && ofz.length && b.currency === 'RUB' && b.ytm != null) {
       const spread = b.ytm - ofz.reduce((a, x) => a + x.ytm, 0) / ofz.length;
       if (spread > 4) out.push(`Доходность на <b>${U.price(spread, 1)} п.п. выше ОФЗ</b> того же срока — рынок закладывает заметный кредитный риск эмитента${b.rating !== 'н/д' ? ', несмотря на высокую метку рейтинга' : ''}.`);
       else if (spread >= 0) out.push(`Доходность выше ОФЗ того же срока на ${U.price(spread, 1)} п.п. — обычная премия за риск корпоративного заёмщика.`);
@@ -397,7 +398,7 @@
     && !(x.meta && (x.meta.subordinated || x.meta.perpetual || x.meta.amortization));
 
   function renderBondSummary() {
-    const b = state.bonds;
+    const b = state.bonds.filter((x) => x.ytm != null);   // без расчётной доходности в средних не участвуют
     const avg = (list) => list.reduce((a, x) => a + x.ytm, 0) / list.length;
     const median = (xs) => { const v = [...xs].sort((a, c) => a - c), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
     const ofz = b.filter((x) => x.type === 'ofz' && x.kind === 'fixed');
@@ -431,7 +432,7 @@
     const W = 360, H = 230, P = { l: 34, r: 12, t: 14, b: 26 };
     // ОФЗ с постоянным купоном + 15 самых торгуемых рублёвых корпоративных выпусков
     const corp = state.bonds.filter((b) => b.type === 'corp' && b.currency === 'RUB').sort((a, b) => b.turnover - a.turnover).slice(0, 15);
-    const pts = [...state.bonds.filter((b) => b.type === 'ofz' && b.kind === 'fixed'), ...corp].map((b) => ({ b, x: b.yearsToMaturity, y: b.ytm }));
+    const pts = [...state.bonds.filter((b) => b.type === 'ofz' && b.kind === 'fixed'), ...corp].filter((b) => b.ytm != null).map((b) => ({ b, x: b.yearsToMaturity, y: b.ytm }));
     if (!pts.length) return;
     const xMax = Math.ceil(Math.max(...pts.map((p) => p.x)) / 5) * 5;
     const yMin = Math.floor(Math.min(...pts.map((p) => p.y)) - 1), yCap = 30; // выбросы выше 30% прижимаем к верху
@@ -479,8 +480,8 @@
         <button class="icon-btn" data-close aria-label="Закрыть"><i data-lucide="x" class="w-4 h-4"></i></button>
       </div>
       <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
-        ${item('Цена', `${U.price(b.price)}% <span class="text-xs text-muted font-normal">(${U.price(b.nominal * b.price / 100)} ₽)</span>`)}
-        ${item('YTM', `<span class="text-up">${U.pct(b.ytm, false)}</span>`)}
+        ${item('Цена', b.price ? `${U.price(b.price)}% <span class="text-xs text-muted font-normal">(${U.price(b.nominal * b.price / 100)} ₽)</span>` : '<span class="text-muted">нет сделок</span>')}
+        ${item('YTM', b.ytm != null ? `<span class="text-up">${U.pct(b.ytm, false)}</span>` : '<span class="text-muted">не рассчитана</span>')}
         <div class="p-3 rounded-lg bg-bg/60 border border-line"><div class="text-[11px] text-muted uppercase tracking-wide">Купон</div><div class="mt-1 font-semibold num" id="bond-coupon-cell">${b.coupon != null
           ? `${b.couponDerived ? '≈' : ''}${U.pct(b.coupon, false)}${b.couponValue ? ` · ${U.price(b.couponValue)} ₽` : ''}`
           : '<span class="text-warn">плавающий</span><div class="text-xs text-muted font-normal">объявляется перед выплатой</div>'}</div></div>
@@ -491,11 +492,11 @@
         ${item('Дюрация', b.duration ? `${U.price(b.duration)} г.` : '—')}
         ${item('Номинал', `${U.int(b.nominal)} ₽`)}
       </div>
-      ${b.coupon != null ? `<p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.${b.couponDerived ? ' Ставка рассчитана по размеру ближайшего купона.' : ''}</p>` : ''}
+      ${b.coupon != null && b.price ? `<p class="mt-4 text-xs text-muted">Купонный доход на 1 облигацию за год ≈ ${U.price(b.nominal * b.coupon / 100)} ₽ (до НДФЛ). Текущая доходность — ${U.pct(b.coupon / b.price * 100, false)}.${b.couponDerived ? ' Ставка рассчитана по размеру ближайшего купона.' : ''}</p>` : ''}
       <div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Купоны</div><div id="bond-schedule" data-isin="${b.isin}" class="mt-1.5"><span class="skeleton h-16 w-full block"></span></div></div>
       ${features ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Особенности выпуска</div><div class="mt-1.5 flex flex-wrap gap-1.5">${features}</div></div>` : ''}
       ${reasons.length ? `<div class="mt-4 p-3 rounded-lg border border-warn/40 bg-warn/5">
-        <div class="text-sm font-semibold">${b.coupon != null ? `Почему купон ${U.pct(b.coupon, false)}, а доходность ${U.pct(b.ytm, false)}` : `Почему доходность ${U.pct(b.ytm, false)}`}</div>
+        <div class="text-sm font-semibold">${b.ytm == null ? 'Что важно знать о выпуске' : b.coupon != null ? `Почему купон ${U.pct(b.coupon, false)}, а доходность ${U.pct(b.ytm, false)}` : `Почему доходность ${U.pct(b.ytm, false)}`}</div>
         <ul class="mt-1.5 space-y-1.5 text-sm text-muted list-disc pl-4">${reasons.map((x) => `<li>${x}</li>`).join('')}</ul>
       </div>` : ''}
       ${b.type === 'corp' ? `<div class="mt-4"><div class="text-[11px] text-muted uppercase tracking-wide">Об эмитенте</div><div id="bond-issuer" data-isin="${b.isin}" class="mt-1.5"></div></div>` : ''}`;
@@ -700,7 +701,7 @@
       return 0;
     };
     const stocks = state.stocks.map((s) => ({ kind: 'stock', s, group: 'Акции', score: score(s) })).filter((x) => x.score).sort((a, b) => b.score - a.score).slice(0, 6);
-    const bonds = state.bonds.filter((b) => [b.name, b.isin, b.secid, b.issuer].some((v) => v.toLowerCase().includes(q))).slice(0, 5).map((b) => ({ kind: 'bond', b, group: 'Облигации' }));
+    const bonds = state.bonds.filter((b) => FP.bondText(b).toLowerCase().includes(q)).slice(0, 5).map((b) => ({ kind: 'bond', b, group: 'Облигации' }));
     return [...stocks, ...bonds];
   }
 
@@ -723,7 +724,7 @@
       const b = it.b;
       return `${head}<div class="${cls}" data-i="${i}" role="option"><span class="ticker-logo" style="background:rgb(var(--c-accent))">${b.type === 'ofz' ? 'ОФЗ' : 'BND'}</span>
         <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${U.highlight(b.name, q)}</div><div class="text-xs text-muted font-mono">${U.highlight(b.isin, q)}</div></div>
-        <div class="text-right"><div class="text-sm num text-up">${U.pct(b.ytm, false)}</div><div class="text-xs text-muted">YTM</div></div></div>`;
+        <div class="text-right"><div class="text-sm num ${b.ytm == null ? 'text-muted' : 'text-up'}">${b.ytm == null ? '—' : U.pct(b.ytm, false)}</div><div class="text-xs text-muted">YTM</div></div></div>`;
     }).join('') || `<div class="p-4 text-sm text-muted">Ничего не найдено по запросу «${U.escape(q)}»</div>`;
     box.classList.remove('hidden');
     input.setAttribute('aria-expanded', 'true');
@@ -909,10 +910,10 @@
       const drill = t.closest('[data-drill]');
       if (drill) {
         const sets = {
-          ofz: { type: 'ofz', couponKind: 'fixed' },
-          // те же условия, что и у карточки: рубли, фиксированный купон, без суборд./бессрочных/амортизации
-          aaa: { type: 'corp', rating: 'AAA', currencies: ['RUB'], couponKind: 'fixed', plain: true },
-          corp: { type: 'corp', currencies: ['RUB'], couponKind: 'fixed', plain: true },
+          ofz: { type: 'ofz', couponKind: 'fixed', hasYtm: true },
+          // те же условия, что и у карточки: рубли, фиксированный купон, без суборд./бессрочных/амортизации, с доходностью
+          aaa: { type: 'corp', rating: 'AAA', currencies: ['RUB'], couponKind: 'fixed', plain: true, hasYtm: true },
+          corp: { type: 'corp', currencies: ['RUB'], couponKind: 'fixed', plain: true, hasYtm: true },
         };
         FP.Screener.showBonds(sets[drill.dataset.drill] || {});
         $('#bond-screener').scrollIntoView({ behavior: 'smooth', block: 'start' });

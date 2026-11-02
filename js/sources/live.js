@@ -278,9 +278,12 @@ FP.LiveSource = (() => {
     const today = U.isoDate(new Date());
     return table(j.securities).map((s) => {
       const m = md.get(s.SECID) || {};
+      // Доходность и цену MOEX даёт не всегда: у флоатеров и индексируемых выпусков без сделок
+      // YIELD пустой. Такие выпуски не отбрасываем — показываем с «—» (раньше пропадали,
+      // например многие облигации Россетей / ФСК). Нужна только действующая дата погашения.
       const ytm = first(m.YIELD, s.YIELDATPREVWAPRICE);
       const price = first(m.LAST, s.PREVPRICE, s.PREVWAPRICE);
-      if (!ytm || !price || !s.MATDATE || s.MATDATE <= today || s.MATDATE.startsWith('0000')) return null;
+      if (!s.MATDATE || s.MATDATE <= today || s.MATDATE.startsWith('0000')) return null;
       return { s, m, ytm, price };
     }).filter(Boolean);
   }
@@ -462,9 +465,9 @@ FP.LiveSource = (() => {
     async getBonds() {
       const [ofz, corp] = await Promise.all([bondBoard('TQOB'), bondBoard('TQCB')]);
       // ОФЗ всех видов: 26xxx — постоянный купон, 29xxx — флоатеры, 52xxx — линкеры
-      const ofzList = ofz.filter((b) => /^ОФЗ/.test(b.s.SHORTNAME) && b.ytm < 60).map((b) => toBond(b, 'ofz'));
+      const ofzList = ofz.filter((b) => /^ОФЗ/.test(b.s.SHORTNAME) && (b.ytm == null || b.ytm < 60)).map((b) => toBond(b, 'ofz'));
       // Все корпоративные выпуски с адекватной доходностью — для скринера
-      const corpList = corp.filter((b) => b.ytm > 0 && b.ytm < 60).map((b) => toBond(b, 'corp'));
+      const corpList = corp.filter((b) => b.ytm == null || (b.ytm > 0 && b.ytm < 60)).map((b) => toBond(b, 'corp'));
       return [...ofzList, ...corpList];
     },
 

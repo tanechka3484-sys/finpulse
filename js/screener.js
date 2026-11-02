@@ -40,7 +40,10 @@ FP.Screener = (() => {
     ['Ритейл', /магнит|x5|икс 5|лента|м\.видео|детский мир|фикс прайс|вайлдберриз/i],
     ['Химия', /фосагро|акрон|еврохим|уралхим|химия/i],
   ];
-  const bondSector = (b) => (b._sector ||= (BOND_SECTORS.find(([, re]) => re.test(`${b.name} ${b.issuer}`)) || ['Прочее'])[0]);
+  /** Всё, по чему ищем выпуск: сокращение MOEX («РсетМР Б1»), ISIN, эмитент и полное название из Т-Инвестиций. */
+  const bondText = (b) => [b.name, b.isin, b.secid, b.issuer, b.meta && b.meta.name].filter(Boolean).join(' ');
+  FP.bondText = bondText;
+  const bondSector = (b) => (b._sector ||= (BOND_SECTORS.find(([, re]) => re.test(bondText(b))) || ['Прочее'])[0]);
 
   const CAP = { all: 'Любая', small: 'до 50 млрд', mid: '50–500 млрд', large: 'от 500 млрд' };
   const capOk = (cap, v) => cap === 'all' || (v != null && (cap === 'small' ? v < 50e9 : cap === 'mid' ? v >= 50e9 && v < 500e9 : v >= 500e9));
@@ -63,7 +66,8 @@ FP.Screener = (() => {
   };
 
   const STOCK_DEFAULT = { q: '', countries: [], sectors: [], cap: 'all', peMax: '', pbMax: '', roeMin: '', ndMax: '', divMin: '', r1yMin: '', sort: { key: 'marketCap', dir: -1 }, limit: PAGE };
-  const BOND_DEFAULT = { q: '', type: 'all', couponKind: 'all', plain: false, currencies: [], sectors: [], countries: [], rating: 'all', ytmMin: '', ytmMax: '', yearsMin: '', yearsMax: '', couponMin: '', durMax: '', freq: 'all', traded: false, sort: { key: 'ytm', dir: -1 }, limit: PAGE };
+  // hasYtm — служебное условие для карточек сводки (в средних участвуют только выпуски с доходностью)
+  const BOND_DEFAULT = { q: '', type: 'all', couponKind: 'all', plain: false, hasYtm: false, currencies: [], sectors: [], countries: [], rating: 'all', ytmMin: '', ytmMax: '', yearsMin: '', yearsMax: '', couponMin: '', durMax: '', freq: 'all', traded: false, sort: { key: 'ytm', dir: -1 }, limit: PAGE };
 
   const load = (k, def) => ({ ...def, ...U.store.get(k, {}), limit: PAGE });
   const save = (k, st) => { const { limit, ...rest } = st; U.store.set(k, rest); };
@@ -248,8 +252,9 @@ FP.Screener = (() => {
     const st = B.st, q = st.q.trim().toLowerCase();
     const v = { ytmMin: n(st.ytmMin), ytmMax: n(st.ytmMax), yearsMin: n(st.yearsMin), yearsMax: n(st.yearsMax), couponMin: n(st.couponMin), durMax: n(st.durMax) };
     return rows.filter((b) =>
-      (!q || [b.name, b.isin, b.secid, b.issuer].some((x) => String(x || '').toLowerCase().includes(q)))
+      (!q || bondText(b).toLowerCase().includes(q))
       && (st.type === 'all' || b.type === st.type)
+      && (!st.hasYtm || b.ytm != null)
       && (st.couponKind === 'all' || (st.couponKind === 'float' ? b.kind === 'float' : b.kind !== 'float' && b.kind !== 'linker'))
       && (!st.plain || !(b.meta && (b.meta.subordinated || b.meta.perpetual || b.meta.amortization)))
       && (!st.currencies.length || st.currencies.includes(b.currency))
@@ -322,7 +327,7 @@ FP.Screener = (() => {
         </td>
         <td class="!text-left hidden lg:table-cell text-muted">${b.sector}</td>
         <td>${U.price(b.price)}</td>
-        <td class="font-semibold ${b.ytm >= 20 ? 'text-warn' : 'text-up'}">${U.pct(b.ytm, false)}</td>
+        <td class="font-semibold ${b.ytm == null ? 'text-muted' : b.ytm >= 20 ? 'text-warn' : 'text-up'}" ${b.ytm == null ? 'title="Мосбиржа не рассчитала доходность: нет сделок или купон плавающий/индексируемый"' : ''}>${b.ytm == null ? '—' : U.pct(b.ytm, false)}</td>
         <td>${b.coupon != null ? `${b.couponDerived ? '≈' : ''}${U.pct(b.coupon, false)}` : '<span class="text-warn" title="Плавающий купон: ставка объявляется перед выплатой">плав.</span>'}</td>
         <td class="hidden sm:table-cell">${b.couponPeriod ? `<span class="text-muted">${ui.couponFreq[b.couponPeriod] || ''}</span> ${b.couponPeriod} дн.` : '—'}</td>
         <td class="hidden md:table-cell">${b.duration ? U.price(b.duration) + ' г.' : '—'}</td>
@@ -360,6 +365,6 @@ FP.Screener = (() => {
       save('scr:bonds', B.st);
       renderBonds();
     },
-    setBonds(rows) { rows.forEach((b) => { b.sector = bondSector(b); }); B.rows = rows; renderBonds(); },
+    setBonds(rows) { rows.forEach((b) => { delete b._sector; b.sector = bondSector(b); }); B.rows = rows; renderBonds(); },
   };
 })();

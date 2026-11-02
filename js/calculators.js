@@ -518,7 +518,7 @@ FP.Calculators = (() => {
   }
 
   function prefillHtml() {
-    const bonds = bondsGetter().filter((b) => b.coupon > 0 && b.currency !== 'CNY' && b.kind !== 'float');
+    const bonds = bondsGetter().filter((b) => b.coupon > 0 && b.price && b.ytm != null && b.currency !== 'CNY' && b.kind !== 'float');
     if (!bonds.length) return '';
     const top = [...bonds].sort((a, b) => (b.turnover || 0) - (a.turnover || 0)).slice(0, 60).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     return `<label class="calc-field sm:col-span-2" for="calc-bond-pick"><span class="calc-label">Подставить выпуск с биржи</span>
