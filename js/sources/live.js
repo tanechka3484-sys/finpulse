@@ -137,10 +137,20 @@ FP.LiveSource = (() => {
   }
 
   /** Обновить последний бар, если он относится к текущей торговой сессии. */
-  function touch(bar, price) {
-    if (!bar || dayKey(bar.time) !== todayMsk()) return;
+  /**
+   * Подтянуть последний бар к текущей цене, если он относится к текущему периоду:
+   * дневной и внутридневной — к сегодняшней сессии, недельный — к текущей неделе.
+   * Время баров — «метка МСК» (см. tsLabel), поэтому сравниваем с текущим временем по Москве.
+   */
+  const SPAN = { day: 86400, week: 7 * 86400 };
+  function touch(bar, price, span = SPAN.day) {
+    if (!bar || !price) return;
+    const nowLabel = Date.now() / 1000 + 3 * 3600;
+    const age = nowLabel - bar.time;
+    if (age < 0 || age >= span) return;
     bar.close = price; bar.high = Math.max(bar.high, price); bar.low = Math.min(bar.low, price);
   }
+  const spanOf = (interval) => (interval === 'ALL' ? SPAN.week : SPAN.day);
 
   /* ---------------- Индексы, валюты, сырьё, крипта ---------------- */
   const item = (symbol, name, value, changePct, kind) => ({ symbol, name, value, changePct: changePct ?? 0, kind });
@@ -409,7 +419,7 @@ FP.LiveSource = (() => {
           changed.push({ ticker: s.ticker, dir: Math.sign(s.price - before) });
           const h = hist.get(s.ticker);
           touch(h.daily[h.daily.length - 1], s.price);
-          Object.values(h.last).forEach((r) => touch(r.bars[r.bars.length - 1], s.price));
+          Object.entries(h.last).forEach(([iv, r]) => touch(r.bars[r.bars.length - 1], s.price, spanOf(iv)));
         }
       }
       status.updatedAt = Date.now();
@@ -528,6 +538,10 @@ FP.LiveSource = (() => {
         res = { bars: h.daily.slice(interval === '1M' ? -22 : -252), intraday: false, label: interval === '1M' ? 'месяц' : 'год' };
       }
       if (!res.bars.length) res = { bars: h.daily.slice(-22), intraday: false, label: 'месяц' };
+      // Свечи и котировки MOEX обновляются не синхронно: сразу подтягиваем последнюю свечу
+      // к текущей цене, чтобы шкала графика совпадала с ценой под тикером
+      const q = byTicker.get(t);
+      if (q && q.price && res.bars.length) touch(res.bars[res.bars.length - 1], q.price, spanOf(interval));
       h.last[interval] = res;
       return res;
     },
