@@ -701,7 +701,10 @@
       return 0;
     };
     const stocks = state.stocks.map((s) => ({ kind: 'stock', s, group: 'Акции', score: score(s) })).filter((x) => x.score).sort((a, b) => b.score - a.score).slice(0, 6);
-    const bonds = state.bonds.filter((b) => FP.bondText(b).toLowerCase().includes(q)).slice(0, 5).map((b) => ({ kind: 'bond', b, group: 'Облигации' }));
+    const allBonds = state.bonds.filter((b) => FP.bondText(b).toLowerCase().includes(q));
+    const bonds = allBonds.slice(0, 5).map((b) => ({ kind: 'bond', b, group: 'Облигации' }));
+    // Больше пяти выпусков — пункт «показать все» открывает скринер с этим запросом без других фильтров
+    if (allBonds.length > bonds.length) bonds.push({ kind: 'bonds-all', q: raw.trim(), count: allBonds.length, group: 'Облигации' });
     return [...stocks, ...bonds];
   }
 
@@ -721,12 +724,16 @@
           <div class="text-xs text-muted">${s.sector} · <span class="font-mono">${U.highlight(s.isin, q)}</span></div></div>
           <div class="text-right"><div class="text-sm num">${U.price(s.price)} ₽</div><div class="text-xs num ${U.trend(s.changePct)}">${U.pct(s.changePct)}</div></div></div>`;
       }
+      if (it.kind === 'bonds-all') {
+        return `${head}<div class="${cls}" data-i="${i}" role="option"><span class="ticker-logo" style="background:rgb(var(--c-accent))"><i data-lucide="list" class="w-4 h-4"></i></span>
+          <div class="flex-1 min-w-0 text-sm font-semibold">Все облигации по запросу «${U.escape(it.q)}»</div><div class="text-sm num text-muted">${it.count}</div></div>`;
+      }
       const b = it.b;
       return `${head}<div class="${cls}" data-i="${i}" role="option"><span class="ticker-logo" style="background:rgb(var(--c-accent))">${b.type === 'ofz' ? 'ОФЗ' : 'BND'}</span>
         <div class="flex-1 min-w-0"><div class="text-sm font-semibold truncate">${U.highlight(b.name, q)}</div><div class="text-xs text-muted font-mono">${U.highlight(b.isin, q)}</div></div>
         <div class="text-right"><div class="text-sm num ${b.ytm == null ? 'text-muted' : 'text-up'}">${b.ytm == null ? '—' : U.pct(b.ytm, false)}</div><div class="text-xs text-muted">YTM</div></div></div>`;
     }).join('') || `<div class="p-4 text-sm text-muted">Ничего не найдено по запросу «${U.escape(q)}»</div>`;
-    box.classList.remove('hidden');
+    box.classList.remove('hidden'); U.icons();
     input.setAttribute('aria-expanded', 'true');
   }
 
@@ -738,6 +745,7 @@
     const input = $('#search-input');
     input.value = ''; input.blur(); closeSearch();
     if (it.kind === 'stock') selectStock(it.s.ticker);
+    else if (it.kind === 'bonds-all') { location.hash = '#bonds'; FP.Screener.showBonds({ q: it.q }); }
     else { location.hash = '#bonds'; openBond(it.b.isin); }
   }
 

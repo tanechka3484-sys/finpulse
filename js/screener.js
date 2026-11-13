@@ -305,11 +305,14 @@ FP.Screener = (() => {
   function renderBondTable() {
     const root = B.root, st = B.st, ui = B.ui;
     const rows = filterBonds(B.rows).sort(sorter(st.sort));
-    $('[data-count]', root).textContent = `${rows.length} из ${B.rows.length}`;
-    const active = (st.type !== 'all') + (st.couponKind !== 'all') + (st.plain ? 1 : 0) + st.currencies.length + st.sectors.length + st.countries.length + (st.rating !== 'all') + (st.freq !== 'all') + (st.traded ? 1 : 0)
+    const active = (st.type !== 'all') + (st.couponKind !== 'all') + (st.plain ? 1 : 0) + st.currencies.length + st.sectors.length + st.countries.length + (st.rating !== 'all') + (st.freq !== 'all') + (st.traded ? 1 : 0) + (st.hasYtm ? 1 : 0)
       + ['ytmMin', 'ytmMax', 'yearsMin', 'yearsMax', 'couponMin', 'durMax'].filter((k) => n(st[k]) != null).length + (st.q ? 1 : 0);
     $$('[data-active]', root).forEach((el) => { el.textContent = active ? `Фильтры · ${active}` : 'Фильтры'; });
     $('[data-reset]', root).hidden = !active;
+    // Выпуски, которые подходят под поиск по названию, но скрыты остальными фильтрами
+    const qq = st.q.trim().toLowerCase();
+    const hidden = qq ? B.rows.filter((b) => bondText(b).toLowerCase().includes(qq)).length - rows.length : 0;
+    $('[data-count]', root).textContent = `${rows.length} из ${B.rows.length}${hidden > 0 ? ` · ещё ${hidden} скрыто фильтрами` : ''}`;
     const q = st.q.trim().toLowerCase();
     const table = $('#bonds-table', root);
     table.querySelector('thead').innerHTML = thead([
@@ -364,6 +367,7 @@ FP.Screener = (() => {
       Object.assign(B.st, structuredClone(BOND_DEFAULT), { sort: B.st.sort }, structuredClone(set));
       save('scr:bonds', B.st);
       renderBonds();
+      if (B.root) $('[data-q]', B.root).value = B.st.q;
     },
     setBonds(rows) { rows.forEach((b) => { delete b._sector; b.sector = bondSector(b); }); B.rows = rows; renderBonds(); },
   };
