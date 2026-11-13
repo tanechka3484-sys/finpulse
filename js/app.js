@@ -1126,5 +1126,31 @@
     await Promise.all([pNews, pBonds, pDivs]);
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  /* =====================================================================
+     Установка как приложения (PWA)
+     ===================================================================== */
+  function initInstall() {
+    // service worker нужен браузеру для установки; на file:// и в песочницах его нет — тихо пропускаем
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[FinPulse] service worker:', e));
+    }
+    const btn = $('#install-app');
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();          // показываем свою кнопку вместо автоматической плашки
+      deferred = e;
+      btn.hidden = false;
+    });
+    btn.addEventListener('click', async () => {
+      if (!deferred) return;
+      deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      deferred = null;
+      btn.hidden = true;
+      if (outcome === 'accepted') toast('FinPulse устанавливается — значок появится на рабочем столе и в меню «Пуск»');
+    });
+    window.addEventListener('appinstalled', () => { btn.hidden = true; });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { initInstall(); init(); });
 })();

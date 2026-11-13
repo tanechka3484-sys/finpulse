@@ -1,0 +1,26 @@
+{
+  "name": "FinPulse — рынок, облигации, дивиденды",
+  "short_name": "FinPulse",
+  "description": "Финансовая аналитика: акции и облигации Мосбиржи, дивиденды, новости, экономические циклы и калькуляторы.",
+  "lang": "ru",
+  "dir": "ltr",
+  "id": "/",
+  "start_url": "/#stocks",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["finance", "business"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Акции", "url": "/#stocks", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Облигации", "url": "/#bonds", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Дивиденды", "url": "/#dividends", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Калькуляторы", "url": "/#calc", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -336,3 +336,6 @@ mark { background: rgb(var(--c-accent) / .25); color: inherit; border-radius: 2p
 }
 .chart-zoom button:hover, .chart-zoom button:active { color: rgb(var(--c-fg)); background: rgb(var(--c-elevated)); }
 .chart-zoom button:focus-visible { outline: 2px solid rgb(var(--c-accent)); outline-offset: 1px; }
+
+/* Кнопка «Установить приложение» скрыта, пока браузер не разрешит установку */
+.icon-btn[hidden] { display: none; }

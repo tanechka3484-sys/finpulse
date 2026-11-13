@@ -315,7 +315,7 @@ async function diagnose() {
    ===================================================================== */
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
 };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -329,7 +329,8 @@ function sitePath(urlPath) {
   if (p === '/' || p === '') p = '/index.html';
   const full = path.normalize(path.join(ROOT, p));
   const rel = path.relative(ROOT, full).split(path.sep).join('/');
-  if (rel.startsWith('..') || !(rel === 'index.html' || rel.startsWith('css/') || rel.startsWith('js/'))) return null;
+  const PUBLIC = ['index.html', 'manifest.webmanifest', 'sw.js'];
+  if (rel.startsWith('..') || !(PUBLIC.includes(rel) || rel.startsWith('css/') || rel.startsWith('js/') || rel.startsWith('icons/'))) return null;
   return full;
 }
 

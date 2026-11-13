@@ -7,6 +7,8 @@ COPY certs ./certs
 COPY index.html ./
 COPY css ./css
 COPY js ./js
+COPY icons ./icons
+COPY manifest.webmanifest sw.js ./
 
 ENV NODE_ENV=production
 # Railway задаёт PORT сам; значение ниже — для локального запуска

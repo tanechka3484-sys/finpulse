@@ -7,6 +7,15 @@
   <meta name="description" content="FinPulse — финансовая аналитика и мониторинг рынка: акции, облигации, дивиденды, новости и интерактивные графики." />
   <meta name="theme-color" content="#0f172a" />
 
+  <!-- Установка как приложения (PWA): манифест, значки, режим окна -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="FinPulse" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
   <!-- Шрифт -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -81,6 +90,11 @@
       <div id="data-source" class="hidden sm:flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md border border-line text-muted shrink-0" title="Источник данных">
         <span class="skeleton h-3 w-24"></span>
       </div>
+
+      <!-- Установить как приложение (кнопка появляется, когда браузер это позволяет) -->
+      <button id="install-app" class="icon-btn shrink-0" title="Установить FinPulse как приложение" aria-label="Установить приложение" hidden>
+        <i data-lucide="monitor-down" class="w-4 h-4"></i>
+      </button>
 
       <!-- Тема -->
       <button id="theme-toggle" class="icon-btn shrink-0" title="Сменить тему" aria-label="Сменить тему">
